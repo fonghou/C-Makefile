@@ -1,0 +1,4 @@
+-I
+./deps
+-I
+/opt/cosmocc/include/
