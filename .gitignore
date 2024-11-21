@@ -20,3 +20,4 @@ tmp.*
 *.exe
 .aider*
 .envrc
+.env

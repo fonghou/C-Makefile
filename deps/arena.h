@@ -60,7 +60,7 @@ enum {
   thing *y = New(&scratch, thing);
   thing *z = helper(scratch);
 
-  free(buffer);
+  free(heap);
 
 */
 
@@ -160,7 +160,7 @@ static inline void *arena_alloc(Arena *a, ssize size, ssize align, ssize count, 
   *a->beg += offset;
   ret = is_forward ? (*a->beg - total_size) : *a->beg;
 
-  return flags & NOINIT ? ret : memset(ret, 0, size * count);
+  return flags & NOINIT ? ret : memset(ret, 0, total_size);
 
 oomjmp:
   if (flags & SOFTFAIL || !a->oomjmp) return NULL;

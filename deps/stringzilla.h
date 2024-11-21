@@ -24,8 +24,8 @@
 #define STRINGZILLA_H_
 
 #define STRINGZILLA_VERSION_MAJOR 3
-#define STRINGZILLA_VERSION_MINOR 10
-#define STRINGZILLA_VERSION_PATCH 8
+#define STRINGZILLA_VERSION_MINOR 11
+#define STRINGZILLA_VERSION_PATCH 1
 
 /**
  *  @brief  When set to 1, the library will include the following LibC headers: <stddef.h> and <stdint.h>.
@@ -414,9 +414,23 @@ typedef union sz_string_t {
 } sz_string_t;
 
 typedef sz_u64_t (*sz_hash_t)(sz_cptr_t, sz_size_t);
+typedef sz_u64_t (*sz_checksum_t)(sz_cptr_t, sz_size_t);
 typedef sz_bool_t (*sz_equal_t)(sz_cptr_t, sz_cptr_t, sz_size_t);
 typedef sz_ordering_t (*sz_order_t)(sz_cptr_t, sz_size_t, sz_cptr_t, sz_size_t);
 typedef void (*sz_to_converter_t)(sz_cptr_t, sz_size_t, sz_ptr_t);
+
+/**
+ *  @brief  Computes the 64-bit check-sum of bytes in a string.
+ *          Similar to `std::ranges::accumulate`.
+ *
+ *  @param text     String to aggregate.
+ *  @param length   Number of bytes in the text.
+ *  @return         64-bit unsigned value.
+ */
+SZ_DYNAMIC sz_u64_t sz_checksum(sz_cptr_t text, sz_size_t length);
+
+/** @copydoc sz_checksum */
+SZ_PUBLIC sz_u64_t sz_checksum_serial(sz_cptr_t text, sz_size_t length);
 
 /**
  *  @brief  Computes the 64-bit unsigned hash of a string. Fairly fast for short strings,
@@ -1805,12 +1819,22 @@ SZ_INTERNAL void _sz_locate_needle_anomalies(sz_cptr_t start, sz_size_t length, 
 #if !SZ_AVOID_LIBC
 #include <stdio.h>  // `fprintf`
 #include <stdlib.h> // `malloc`, `EXIT_FAILURE`
+
+SZ_PUBLIC void *_sz_memory_allocate_default(sz_size_t length, void *handle) {
+    sz_unused(handle);
+    return malloc(length);
+}
+SZ_PUBLIC void _sz_memory_free_default(sz_ptr_t start, sz_size_t length, void *handle) {
+    sz_unused(handle && length);
+    free(start);
+}
+
 #endif
 
 SZ_PUBLIC void sz_memory_allocator_init_default(sz_memory_allocator_t *alloc) {
 #if !SZ_AVOID_LIBC
-    alloc->allocate = (sz_memory_allocate_t)malloc;
-    alloc->free = (sz_memory_free_t)free;
+    alloc->allocate = (sz_memory_allocate_t)_sz_memory_allocate_default;
+    alloc->free = (sz_memory_free_t)_sz_memory_free_default;
 #else
     alloc->allocate = (sz_memory_allocate_t)SZ_NULL;
     alloc->free = (sz_memory_free_t)SZ_NULL;
@@ -1917,7 +1941,7 @@ SZ_PUBLIC sz_cptr_t sz_find_byte_serial(sz_cptr_t h, sz_size_t h_length, sz_cptr
     if (!h_length) return SZ_NULL_CHAR;
     sz_cptr_t const h_end = h + h_length;
 
-#if !SZ_DETECT_BIG_ENDIAN    // Use SWAR only on little-endian platforms for brevety.
+#if !SZ_DETECT_BIG_ENDIAN    // Use SWAR only on little-endian platforms for brevity.
 #if !SZ_USE_MISALIGNED_LOADS // Process the misaligned head, to void UB on unaligned 64-bit loads.
     for (; ((sz_size_t)h & 7ull) && h < h_end; ++h)
         if (*h == *n) return h;
@@ -1954,7 +1978,7 @@ sz_cptr_t sz_rfind_byte_serial(sz_cptr_t h, sz_size_t h_length, sz_cptr_t n) {
     // Reposition the `h` pointer to the end, as we will be walking backwards.
     h = h + h_length - 1;
 
-#if !SZ_DETECT_BIG_ENDIAN    // Use SWAR only on little-endian platforms for brevety.
+#if !SZ_DETECT_BIG_ENDIAN    // Use SWAR only on little-endian platforms for brevity.
 #if !SZ_USE_MISALIGNED_LOADS // Process the misaligned head, to void UB on unaligned 64-bit loads.
     for (; ((sz_size_t)(h + 1) & 7ull) && h >= h_start; --h)
         if (*h == *n) return h;
@@ -2440,9 +2464,9 @@ SZ_INTERNAL sz_size_t _sz_edit_distance_skewed_diagonals_serial( //
             sz_size_t cost_if_deletion_or_insertion = sz_min_of_two(current_distances[i], current_distances[i + 1]) + 1;
             next_distances[i + 1] = sz_min_of_two(cost_if_deletion_or_insertion, cost_if_substitution);
         }
-        // Don't forget to populate the first row and the fiest column of the Levenshtein matrix.
+        // Don't forget to populate the first row and the first column of the Levenshtein matrix.
         next_distances[0] = next_distances[next_skew_diagonal_length - 1] = next_skew_diagonal_index;
-        // Perform a circular rotarion of those buffers, to reuse the memory.
+        // Perform a circular rotation of those buffers, to reuse the memory.
         sz_size_t *temporary = previous_distances;
         previous_distances = current_distances;
         current_distances = next_distances;
@@ -2462,7 +2486,7 @@ SZ_INTERNAL sz_size_t _sz_edit_distance_skewed_diagonals_serial( //
             sz_size_t cost_if_deletion_or_insertion = sz_min_of_two(current_distances[i], current_distances[i + 1]) + 1;
             next_distances[i] = sz_min_of_two(cost_if_deletion_or_insertion, cost_if_substitution);
         }
-        // Perform a circular rotarion of those buffers, to reuse the memory, this time, with a shift,
+        // Perform a circular rotation of those buffers, to reuse the memory, this time, with a shift,
         // dropping the first element in the current array.
         sz_size_t *temporary = previous_distances;
         previous_distances = current_distances + 1;
@@ -2851,6 +2875,14 @@ SZ_PUBLIC sz_size_t sz_hamming_distance_utf8_serial( //
         for (; b < b_end; b += b_rune_length, ++distance) _sz_extract_utf8_rune(b, &b_rune, &b_rune_length);
     }
     return distance;
+}
+
+SZ_PUBLIC sz_u64_t sz_checksum_serial(sz_cptr_t text, sz_size_t length) {
+    sz_u64_t checksum = 0;
+    sz_u8_t const *text_u8 = (sz_u8_t const *)text;
+    sz_u8_t const *text_end = text_u8 + length;
+    for (; text_u8 != text_end; ++text_u8) checksum += *text_u8;
+    return checksum;
 }
 
 /**
@@ -3454,25 +3486,24 @@ SZ_PUBLIC void sz_string_free(sz_string_t *string, sz_memory_allocator_t *alloca
     sz_string_init(string);
 }
 
-// When overriding libc, disable optimisations for this function beacuse MSVC will optimize the loops into a memset.
+// When overriding libc, disable optimizations for this function because MSVC will optimize the loops into a memset.
 // Which then causes a stack overflow due to infinite recursion (memset -> sz_fill_serial -> memset).
 #if defined(_MSC_VER) && defined(SZ_OVERRIDE_LIBC) && SZ_OVERRIDE_LIBC
 #pragma optimize("", off)
 #endif
 SZ_PUBLIC void sz_fill_serial(sz_ptr_t target, sz_size_t length, sz_u8_t value) {
-    sz_ptr_t end = target + length;
     // Dealing with short strings, a single sequential pass would be faster.
     // If the size is larger than 2 words, then at least 1 of them will be aligned.
     // But just one aligned word may not be worth SWAR.
     if (length < SZ_SWAR_THRESHOLD)
-        while (target != end) *(target++) = value;
+        while (length--) *(target++) = value;
 
     // In case of long strings, skip unaligned bytes, and then fill the rest in 64-bit chunks.
     else {
         sz_u64_t value64 = (sz_u64_t)value * 0x0101010101010101ull;
-        while ((sz_size_t)target & 7ull) *(target++) = value;
-        while (target + 8 <= end) *(sz_u64_t *)target = value64, target += 8;
-        while (target != end) *(target++) = value;
+        while ((sz_size_t)target & 7ull) *(target++) = value, length--;
+        while (length >= 8) *(sz_u64_t *)target = value64, target += 8, length -= 8;
+        while (length--) *(target++) = value;
     }
 }
 #if defined(_MSC_VER) && defined(SZ_OVERRIDE_LIBC) && SZ_OVERRIDE_LIBC
@@ -3480,6 +3511,13 @@ SZ_PUBLIC void sz_fill_serial(sz_ptr_t target, sz_size_t length, sz_u8_t value) 
 #endif
 
 SZ_PUBLIC void sz_copy_serial(sz_ptr_t target, sz_cptr_t source, sz_size_t length) {
+    // The most typical implementation of `memcpy` suffers from Undefined Behavior:
+    //
+    //   for (char const *end = source + length; source < end; source++) *target++ = *source;
+    //
+    // As NULL pointer arithmetic is undefined for calls like `memcpy(NULL, NULL, 0)`.
+    // That's mitigated in C2y with the N3322 proposal, but our solution uses a design, that has no such issues.
+    // https://developers.redhat.com/articles/2024/12/11/making-memcpynull-null-0-well-defined
 #if SZ_USE_MISALIGNED_LOADS
     while (length >= 8) *(sz_u64_t *)target = *(sz_u64_t const *)source, target += 8, source += 8, length -= 8;
 #endif
@@ -3965,6 +4003,86 @@ SZ_PUBLIC void sz_move_avx2(sz_ptr_t target, sz_cptr_t source, sz_size_t length)
         for (target += length, source += length; length >= 32; length -= 32)
             _mm256_storeu_si256((__m256i *)(target -= 32), _mm256_lddqu_si256((__m256i const *)(source -= 32)));
         while (length--) *(--target) = *(--source);
+    }
+}
+
+SZ_PUBLIC sz_u64_t sz_checksum_avx2(sz_cptr_t text, sz_size_t length) {
+    // The naive implementation of this function is very simple.
+    // It assumes the CPU is great at handling unaligned "loads".
+    //
+    // A typical AWS Skylake instance can have 32 KB x 2 blocks of L1 data cache per core,
+    // 1 MB x 2 blocks of L2 cache per core, and one shared L3 cache buffer.
+    // For now, let's avoid the cases beyond the L2 size.
+    int is_huge = length > 1ull * 1024ull * 1024ull;
+
+    // When the buffer is small, there isn't much to innovate.
+    if (length <= 32) { return sz_checksum_serial(text, length); }
+    else if (!is_huge) {
+        sz_u256_vec_t text_vec, sums_vec;
+        sums_vec.ymm = _mm256_setzero_si256();
+        for (; length >= 32; text += 32, length -= 32) {
+            text_vec.ymm = _mm256_lddqu_si256((__m256i const *)text);
+            sums_vec.ymm = _mm256_add_epi64(sums_vec.ymm, _mm256_sad_epu8(text_vec.ymm, _mm256_setzero_si256()));
+        }
+        // Accumulating 256 bits is harders, as we need to extract the 128-bit sums first.
+        __m128i low_xmm = _mm256_castsi256_si128(sums_vec.ymm);
+        __m128i high_xmm = _mm256_extracti128_si256(sums_vec.ymm, 1);
+        __m128i sums_xmm = _mm_add_epi64(low_xmm, high_xmm);
+        sz_u64_t low = (sz_u64_t)_mm_cvtsi128_si64(sums_xmm);
+        sz_u64_t high = (sz_u64_t)_mm_extract_epi64(sums_xmm, 1);
+        sz_u64_t result = low + high;
+        if (length) result += sz_checksum_serial(text, length);
+        return result;
+    }
+    // For gigantic buffers, exceeding typical L1 cache sizes, there are other tricks we can use.
+    // Most notably, we can avoid populating the cache with the entire buffer, and instead traverse it in 2 directions.
+    else {
+        sz_size_t head_length = (32 - ((sz_size_t)text % 32)) % 32; // 31 or less.
+        sz_size_t tail_length = (sz_size_t)(text + length) % 32;    // 31 or less.
+        sz_size_t body_length = length - head_length - tail_length; // Multiple of 32.
+        sz_u64_t result = 0;
+
+        // Handle the head
+        while (head_length--) result += *text++;
+
+        sz_u256_vec_t text_vec, sums_vec;
+        sums_vec.ymm = _mm256_setzero_si256();
+        // Fill the aligned body of the buffer.
+        if (!is_huge) {
+            for (; body_length >= 32; text += 32, body_length -= 32) {
+                text_vec.ymm = _mm256_stream_load_si256((__m256i const *)text);
+                sums_vec.ymm = _mm256_add_epi64(sums_vec.ymm, _mm256_sad_epu8(text_vec.ymm, _mm256_setzero_si256()));
+            }
+        }
+        // When the biffer is huge, we can traverse it in 2 directions.
+        else {
+            sz_u256_vec_t text_reversed_vec, sums_reversed_vec;
+            sums_reversed_vec.ymm = _mm256_setzero_si256();
+            for (; body_length >= 64; text += 64, body_length -= 64) {
+                text_vec.ymm = _mm256_stream_load_si256((__m256i *)(text));
+                sums_vec.ymm = _mm256_add_epi64(sums_vec.ymm, _mm256_sad_epu8(text_vec.ymm, _mm256_setzero_si256()));
+                text_reversed_vec.ymm = _mm256_stream_load_si256((__m256i *)(text + body_length - 64));
+                sums_reversed_vec.ymm = _mm256_add_epi64(
+                    sums_reversed_vec.ymm, _mm256_sad_epu8(text_reversed_vec.ymm, _mm256_setzero_si256()));
+            }
+            if (body_length >= 32) {
+                text_vec.ymm = _mm256_stream_load_si256((__m256i *)(text));
+                sums_vec.ymm = _mm256_add_epi64(sums_vec.ymm, _mm256_sad_epu8(text_vec.ymm, _mm256_setzero_si256()));
+            }
+            sums_vec.ymm = _mm256_add_epi64(sums_vec.ymm, sums_reversed_vec.ymm);
+        }
+
+        // Handle the tail
+        while (tail_length--) result += *text++;
+
+        // Accumulating 256 bits is harders, as we need to extract the 128-bit sums first.
+        __m128i low_xmm = _mm256_castsi256_si128(sums_vec.ymm);
+        __m128i high_xmm = _mm256_extracti128_si256(sums_vec.ymm, 1);
+        __m128i sums_xmm = _mm_add_epi64(low_xmm, high_xmm);
+        sz_u64_t low = (sz_u64_t)_mm_cvtsi128_si64(sums_xmm);
+        sz_u64_t high = (sz_u64_t)_mm_extract_epi64(sums_xmm, 1);
+        result += low + high;
+        return result;
     }
 }
 
@@ -4490,6 +4608,20 @@ SZ_INTERNAL __mmask16 _sz_u16_clamp_mask_until(sz_size_t n) {
     //      return (1ull << n) - 1;
     // A slightly more complex approach, if we don't know that `n` is under 16:
     return _bzhi_u32(0xFFFFFFFF, n < 16 ? (sz_u32_t)n : 16);
+}
+
+SZ_INTERNAL __mmask16 _sz_u16_mask_until(sz_size_t n) {
+    // The simplest approach to compute this if we know that `n` is blow or equal 16:
+    //      return (1ull << n) - 1;
+    // A slightly more complex approach, if we don't know that `n` is under 16:
+    return (__mmask16)_bzhi_u32(0xFFFFFFFF, (sz_u32_t)n);
+}
+
+SZ_INTERNAL __mmask32 _sz_u32_mask_until(sz_size_t n) {
+    // The simplest approach to compute this if we know that `n` is blow or equal 32:
+    //      return (1ull << n) - 1;
+    // A slightly more complex approach, if we don't know that `n` is under 32:
+    return _bzhi_u32(0xFFFFFFFF, (sz_u32_t)n);
 }
 
 SZ_INTERNAL __mmask64 _sz_u64_mask_until(sz_size_t n) {
@@ -5089,7 +5221,7 @@ SZ_INTERNAL sz_size_t _sz_edit_distance_skewed_diagonals_upto65k_avx512( //
         }
         // Don't forget to populate the first row and the fiest column of the Levenshtein matrix.
         next_distances[0] = next_distances[next_skew_diagonal_length - 1] = (sz_u16_t)next_skew_diagonal_index;
-        // Perform a circular rotarion of those buffers, to reuse the memory.
+        // Perform a circular rotation of those buffers, to reuse the memory.
         sz_u16_t *temporary = previous_distances;
         previous_distances = current_distances;
         current_distances = next_distances;
@@ -5131,7 +5263,7 @@ SZ_INTERNAL sz_size_t _sz_edit_distance_skewed_diagonals_upto65k_avx512( //
             i += register_length;
         }
 
-        // Perform a circular rotarion of those buffers, to reuse the memory, this time, with a shift,
+        // Perform a circular rotation of those buffers, to reuse the memory, this time, with a shift,
         // dropping the first element in the current array.
         sz_u16_t *temporary = previous_distances;
         previous_distances = current_distances + 1;
@@ -5164,6 +5296,100 @@ SZ_INTERNAL sz_size_t sz_edit_distance_avx512(   //
 #pragma GCC target("avx", "avx512f", "avx512vl", "avx512bw", "avx512dq", "bmi", "bmi2")
 #pragma clang attribute push(__attribute__((target("avx,avx512f,avx512vl,avx512bw,avx512dq,bmi,bmi2"))), \
                              apply_to = function)
+
+SZ_PUBLIC sz_u64_t sz_checksum_avx512(sz_cptr_t text, sz_size_t length) {
+    // The naive implementation of this function is very simple.
+    // It assumes the CPU is great at handling unaligned "loads".
+    //
+    // A typical AWS Sapphire Rapids instance can have 48 KB x 2 blocks of L1 data cache per core,
+    // 2 MB x 2 blocks of L2 cache per core, and one shared 60 MB buffer of L3 cache.
+    // With two strings, we may consider the overal workload huge, if each exceeds 1 MB in length.
+    int const is_huge = length >= 1ull * 1024ull * 1024ull;
+    sz_u512_vec_t text_vec, sums_vec;
+
+    // When the buffer is small, there isn't much to innovate.
+    if (length <= 16) {
+        __mmask16 mask = _sz_u16_mask_until(length);
+        text_vec.xmms[0] = _mm_maskz_loadu_epi8(mask, text);
+        sums_vec.xmms[0] = _mm_sad_epu8(text_vec.xmms[0], _mm_setzero_si128());
+        sz_u64_t low = (sz_u64_t)_mm_cvtsi128_si64(sums_vec.xmms[0]);
+        sz_u64_t high = (sz_u64_t)_mm_extract_epi64(sums_vec.xmms[0], 1);
+        return low + high;
+    }
+    else if (length <= 32) {
+        __mmask32 mask = _sz_u32_mask_until(length);
+        text_vec.ymms[0] = _mm256_maskz_loadu_epi8(mask, text);
+        sums_vec.ymms[0] = _mm256_sad_epu8(text_vec.ymms[0], _mm256_setzero_si256());
+        // Accumulating 256 bits is harders, as we need to extract the 128-bit sums first.
+        __m128i low_xmm = _mm256_castsi256_si128(sums_vec.ymms[0]);
+        __m128i high_xmm = _mm256_extracti128_si256(sums_vec.ymms[0], 1);
+        __m128i sums_xmm = _mm_add_epi64(low_xmm, high_xmm);
+        sz_u64_t low = (sz_u64_t)_mm_cvtsi128_si64(sums_xmm);
+        sz_u64_t high = (sz_u64_t)_mm_extract_epi64(sums_xmm, 1);
+        return low + high;
+    }
+    else if (length <= 64) {
+        __mmask64 mask = _sz_u64_mask_until(length);
+        text_vec.zmm = _mm512_maskz_loadu_epi8(mask, text);
+        sums_vec.zmm = _mm512_sad_epu8(text_vec.zmm, _mm512_setzero_si512());
+        return _mm512_reduce_add_epi64(sums_vec.zmm);
+    }
+    else if (!is_huge) {
+        sz_size_t head_length = (64 - ((sz_size_t)text % 64)) % 64; // 63 or less.
+        sz_size_t tail_length = (sz_size_t)(text + length) % 64;    // 63 or less.
+        sz_size_t body_length = length - head_length - tail_length; // Multiple of 64.
+        __mmask64 head_mask = _sz_u64_mask_until(head_length);
+        __mmask64 tail_mask = _sz_u64_mask_until(tail_length);
+        text_vec.zmm = _mm512_maskz_loadu_epi8(head_mask, text);
+        sums_vec.zmm = _mm512_sad_epu8(text_vec.zmm, _mm512_setzero_si512());
+        for (text += head_length; body_length >= 64; text += 64, body_length -= 64) {
+            text_vec.zmm = _mm512_load_si512((__m512i const *)text);
+            sums_vec.zmm = _mm512_add_epi64(sums_vec.zmm, _mm512_sad_epu8(text_vec.zmm, _mm512_setzero_si512()));
+        }
+        text_vec.zmm = _mm512_maskz_loadu_epi8(tail_mask, text);
+        sums_vec.zmm = _mm512_add_epi64(sums_vec.zmm, _mm512_sad_epu8(text_vec.zmm, _mm512_setzero_si512()));
+        return _mm512_reduce_add_epi64(sums_vec.zmm);
+    }
+    // For gigantic buffers, exceeding typical L1 cache sizes, there are other tricks we can use.
+    //
+    //      1. Moving in both directions to maximize the throughput, when fetching from multiple
+    //         memory pages. Also helps with cache set-associativity issues, as we won't always
+    //         be fetching the same entries in the lookup table.
+    //      2. Using non-temporal stores to avoid polluting the cache.
+    //      3. Prefetching the next cache line, to avoid stalling the CPU. This generally useless
+    //         for predictable patterns, so disregard this advice.
+    //
+    // Bidirectional traversal generally adds about 10% to such algorithms.
+    else {
+        sz_u512_vec_t text_reversed_vec, sums_reversed_vec;
+        sz_size_t head_length = (64 - ((sz_size_t)text % 64)) % 64;
+        sz_size_t tail_length = (sz_size_t)(text + length) % 64;
+        sz_size_t body_length = length - head_length - tail_length;
+        __mmask64 head_mask = _sz_u64_mask_until(head_length);
+        __mmask64 tail_mask = _sz_u64_mask_until(tail_length);
+
+        text_vec.zmm = _mm512_maskz_loadu_epi8(head_mask, text);
+        sums_vec.zmm = _mm512_sad_epu8(text_vec.zmm, _mm512_setzero_si512());
+        text_reversed_vec.zmm = _mm512_maskz_loadu_epi8(tail_mask, text + head_length + body_length);
+        sums_reversed_vec.zmm = _mm512_sad_epu8(text_reversed_vec.zmm, _mm512_setzero_si512());
+
+        // Now in the main loop, we can use non-temporal loads and stores,
+        // performing the operation in both directions.
+        for (text += head_length; body_length >= 128; text += 64, text += 64, body_length -= 128) {
+            text_vec.zmm = _mm512_stream_load_si512((__m512i *)(text));
+            sums_vec.zmm = _mm512_add_epi64(sums_vec.zmm, _mm512_sad_epu8(text_vec.zmm, _mm512_setzero_si512()));
+            text_reversed_vec.zmm = _mm512_stream_load_si512((__m512i *)(text + body_length - 64));
+            sums_reversed_vec.zmm =
+                _mm512_add_epi64(sums_reversed_vec.zmm, _mm512_sad_epu8(text_reversed_vec.zmm, _mm512_setzero_si512()));
+        }
+        if (body_length >= 64) {
+            text_vec.zmm = _mm512_stream_load_si512((__m512i *)(text));
+            sums_vec.zmm = _mm512_add_epi64(sums_vec.zmm, _mm512_sad_epu8(text_vec.zmm, _mm512_setzero_si512()));
+        }
+
+        return _mm512_reduce_add_epi64(_mm512_add_epi64(sums_vec.zmm, sums_reversed_vec.zmm));
+    }
+}
 
 SZ_PUBLIC void sz_hashes_avx512(sz_cptr_t start, sz_size_t length, sz_size_t window_length, sz_size_t step, //
                                 sz_hash_callback_t callback, void *callback_handle) {
@@ -5760,6 +5986,62 @@ SZ_INTERNAL sz_ssize_t sz_alignment_score_avx512( //
         return sz_alignment_score_serial(shorter, shorter_length, longer, longer_length, subs, gap, alloc);
 }
 
+enum sz_encoding_t {
+    sz_encoding_unknown_k = 0,
+    sz_encoding_ascii_k = 1,
+    sz_encoding_utf8_k = 2,
+    sz_encoding_utf16_k = 3,
+    sz_encoding_utf32_k = 4,
+    sz_jwt_k,
+    sz_base64_k,
+    // Low priority encodings:
+    sz_encoding_utf8bom_k = 5,
+    sz_encoding_utf16le_k = 6,
+    sz_encoding_utf16be_k = 7,
+    sz_encoding_utf32le_k = 8,
+    sz_encoding_utf32be_k = 9,
+};
+
+// Character Set Detection is one of the most commonly performed operations in data processing with
+// [Chardet](https://github.com/chardet/chardet), [Charset Normalizer](https://github.com/jawah/charset_normalizer),
+// [cChardet](https://github.com/PyYoshi/cChardet) being the most commonly used options in the Python ecosystem.
+// All of them are notoriously slow.
+//
+// Moreover, as of October 2024, UTF-8 is the dominant character encoding on the web, used by 98.4% of websites.
+// Other have minimal usage, according to [W3Techs](https://w3techs.com/technologies/overview/character_encoding):
+// - ISO-8859-1: 1.2%
+// - Windows-1252: 0.3%
+// - Windows-1251: 0.2%
+// - EUC-JP: 0.1%
+// - Shift JIS: 0.1%
+// - EUC-KR: 0.1%
+// - GB2312: 0.1%
+// - Windows-1250: 0.1%
+// Within programming language implementations and database management systems, 16-bit and 32-bit fixed-width encodings
+// are also very popular and we need a way to efficienly differentiate between the most common UTF flavors, ASCII, and
+// the rest.
+//
+// One good solution is the [simdutf](https://github.com/simdutf/simdutf) library, but it depends on the C++ runtime
+// and focuses more on incremental validation & transcoding, rather than detection.
+//
+// So we need a very fast and efficient way of determining
+SZ_PUBLIC sz_bool_t sz_detect_encoding(sz_cptr_t text, sz_size_t length) {
+    // https://github.com/simdutf/simdutf/blob/master/src/icelake/icelake_utf8_validation.inl.cpp
+    // https://github.com/simdutf/simdutf/blob/603070affe68101e9e08ea2de19ea5f3f154cf5d/src/icelake/icelake_from_utf8.inl.cpp#L81
+    // https://github.com/simdutf/simdutf/blob/603070affe68101e9e08ea2de19ea5f3f154cf5d/src/icelake/icelake_utf8_common.inl.cpp#L661
+    // https://github.com/simdutf/simdutf/blob/603070affe68101e9e08ea2de19ea5f3f154cf5d/src/icelake/icelake_utf8_common.inl.cpp#L788
+
+    // We can implement this operation simpler & differently, assuming most of the time continuous chunks of memory
+    // have identical encoding. With Russian and many European languages, we generally deal with 2-byte codepoints
+    // with occasional 1-byte punctuation marks. In the case of Chinese, Japanese, and Korean, we deal with 3-byte
+    // codepoints. In the case of emojis, we deal with 4-byte codepoints.
+    // We can also use the idea, that misaligned reads are quite cheap on modern CPUs.
+    int can_be_ascii = 1, can_be_utf8 = 1, can_be_utf16 = 1, can_be_utf32 = 1;
+    sz_unused(can_be_ascii + can_be_utf8 + can_be_utf16 + can_be_utf32);
+    sz_unused(text && length);
+    return sz_false_k;
+}
+
 #pragma clang attribute pop
 #pragma GCC pop_options
 #endif
@@ -5808,12 +6090,30 @@ SZ_PUBLIC sz_bool_t sz_equal_neon(sz_cptr_t a, sz_cptr_t b, sz_size_t length) {
         a_vec.u8x16 = vld1q_u8((sz_u8_t const *)a);
         b_vec.u8x16 = vld1q_u8((sz_u8_t const *)b);
         uint8x16_t cmp = vceqq_u8(a_vec.u8x16, b_vec.u8x16);
-        if (vmaxvq_u8(cmp) != 255) { return sz_false_k; } // Check if all bytes match
+        if (vminvq_u8(cmp) != 255) { return sz_false_k; } // Check if all bytes match
     }
 
     // Handle remaining bytes
     if (length) return sz_equal_serial(a, b, length);
     return sz_true_k;
+}
+
+SZ_PUBLIC sz_u64_t sz_checksum_neon(sz_cptr_t text, sz_size_t length) {
+    uint64x2_t sum_vec = vdupq_n_u64(0);
+
+    // Process 16 bytes (128 bits) at a time
+    for (; length >= 16; text += 16, length -= 16) {
+        uint8x16_t vec = vld1q_u8((sz_u8_t const *)text);      // Load 16 bytes
+        uint16x8_t pairwise_sum1 = vpaddlq_u8(vec);            // Pairwise add lower and upper 8 bits
+        uint32x4_t pairwise_sum2 = vpaddlq_u16(pairwise_sum1); // Pairwise add 16-bit results
+        uint64x2_t pairwise_sum3 = vpaddlq_u32(pairwise_sum2); // Pairwise add 32-bit results
+        sum_vec = vaddq_u64(sum_vec, pairwise_sum3);           // Accumulate the sum
+    }
+
+    // Final reduction of `sum_vec` to a single scalar
+    sz_u64_t sum = vgetq_lane_u64(sum_vec, 0) + vgetq_lane_u64(sum_vec, 1);
+    if (length) sum += sz_checksum_serial(text, length);
+    return sum;
 }
 
 SZ_PUBLIC void sz_copy_neon(sz_ptr_t target, sz_cptr_t source, sz_size_t length) {
@@ -6290,6 +6590,18 @@ SZ_PUBLIC void sz_hashes_fingerprint(sz_cptr_t start, sz_size_t length, sz_size_
 }
 
 #if !SZ_DYNAMIC_DISPATCH
+
+SZ_DYNAMIC sz_u64_t sz_checksum(sz_cptr_t text, sz_size_t length) {
+#if SZ_USE_X86_AVX512
+    return sz_checksum_avx512(text, length);
+#elif SZ_USE_X86_AVX2
+    return sz_checksum_avx2(text, length);
+#elif SZ_USE_ARM_NEON
+    return sz_checksum_neon(text, length);
+#else
+    return sz_checksum_serial(text, length);
+#endif
+}
 
 SZ_DYNAMIC sz_bool_t sz_equal(sz_cptr_t a, sz_cptr_t b, sz_size_t length) {
 #if SZ_USE_X86_AVX512
