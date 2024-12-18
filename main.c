@@ -48,7 +48,8 @@ int main(void) {
 
   {
     Arena local = arena;
-    local.beg = &(byte *){*arena.beg};
+    ARENA_PUSH(local, arena);
+    // local.beg = &(byte *){*arena.beg};
 
     ARENA_LOG(local);
 
@@ -125,5 +126,8 @@ int main(void) {
   ARENA_LOG(arena);
 
   vt_cleanup(&mymap);
-  // free(heap);  // line 39: autofree ... gc
+
+#ifndef __GNUC__
+  free(heap);
+#endif
 }

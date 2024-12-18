@@ -25,7 +25,7 @@ deps:
 
 .PHONY: watch
 watch:
-	find -name '*.c' -o -name '*.h' | entr -cc clang $(WARN) -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
+	find -name '*.c' -o -name '*.h' | entr -cc clang -Ideps $(WARN) -Wno-macro-redefined -Wno-cast-function-type-mismatch -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
 
 .PHONY: debug release
 debug: CFLAGS += -Og
