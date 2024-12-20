@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#define GLOBAL_ARENA _global_arena
 #include "arena.h"
 #include "list.h"
 #include "stringzilla.h"
@@ -36,9 +37,11 @@ int main(void) {
   ShowCrashReports();
 #endif
 
-  enum { cap = 1 << 11 };
+  enum { cap = 1 << 12 };
   autofree byte *heap = gc(malloc(cap));
   Arena arena = newarena(&(byte *){heap}, cap);
+  GLOBAL_ARENA = &arena;
+  tstr_set_allocator(&GLOBAL_ARENA_MALLOC_FN, &GLOBAL_ARENA_FREE_FN);
   ARENA_LOG(arena);
 
   if (ARENA_OOM(&arena)) {
@@ -94,11 +97,12 @@ int main(void) {
   ssmap mymap;
   vt_init_with_ctx(&mymap, &arena);
 
+  enum { sz = 100 };
   for (int i = 0; i < 10; ++i) {
-    char *k = New(&arena, char, 20);
-    sprintf(k, "key-%d", i);
-    char *v = New(&arena, char, 20);
-    int n = sprintf(v, "%d", 10000 + i);
+    char *k = New(&arena, char, sz);
+    snprintf(k, sz, "key-%d", i);
+    char *v = New(&arena, char, sz);
+    int n = snprintf(v, sz, "%d", 10000 + i);
     sz_string_view_t val = {v, n};
     ssmap_itr it = vt_insert(&mymap, k, val);
     uprintf("%S\n", &it);
@@ -106,8 +110,7 @@ int main(void) {
 
   for (int i = 0; i < 100; ++i) {
     tstr *k = tstr_from_format("key-%d", i);
-    autofree char *s = gc(strdup(k));
-    ssmap_itr it = vt_get(&mymap, s);
+    ssmap_itr it = vt_get(&mymap, k);
     tstr_free(k);
     if (vt_is_end(it)) {
       char *k0 = "key-0";
