@@ -1,4 +1,6 @@
 -I
-./deps
+./include
 -I
 /opt/cosmocc/include/
+-I
+STC/include

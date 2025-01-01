@@ -2,7 +2,7 @@ EXE = main
 BUILD_DIR := ./build
 TARGET= $(BUILD_DIR)/$(EXE)
 
-SRC :=$(shell find . -name '*.c')
+SRC :=$(shell find . -name '*.c' | grep -v STC)
 OBJ :=$(SRC:%.c=$(BUILD_DIR)/%.o)
 DEP :=$(OBJS:.o=.d)
 LIB :=$(addprefix -l,m)
@@ -10,7 +10,7 @@ LIB :=$(addprefix -l,m)
 WARN = -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
 SANZ += -fsanitize=undefined -fsanitize-trap=unreachable
 
-CPPFLAGS += -MMD -MP -Ideps
+CPPFLAGS += -MMD -MP -Iinclude -ISTC/include
 CFLAGS   += -ggdb3 -fno-omit-frame-pointer $(SANZ) $(WARN)
 LDFLAGS  += $(LIB) $(SANZ)
 
@@ -19,13 +19,12 @@ all: debug
 
 .PHONY: deps
 deps:
-	(cd deps; pkg.sh import)
-	curl --output-dir deps -O https://raw.githubusercontent.com/ashvardanian/StringZilla/main/include/stringzilla/stringzilla.h
-	curl --output-dir deps -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
+	(cd include; pkg.sh import)
+	curl --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
 
 .PHONY: watch
 watch:
-	find -name '*.c' -o -name '*.h' | entr -cc clang -Ideps $(WARN) -Wno-macro-redefined -Wno-cast-function-type-mismatch -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
+	find -name '*.c' -o -name '*.h' | entr -cc clang -Iinclude $(WARN) -Wno-macro-redefined -Wno-cast-function-type-mismatch -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
 
 .PHONY: debug release
 debug: CFLAGS += -Og

@@ -13,12 +13,11 @@
 #define GLOBAL_ARENA _global_arena
 #include "arena.h"
 #include "list.h"
-#include "stringzilla.h"
 #include "tstr.h"
 
-#define NAME   ssmap
+#define NAME ssmap
 #define KEY_TY char *
-#define VAL_TY sz_string_view_t
+#define VAL_TY char *
 #include "verstable.h"
 
 typedef struct {
@@ -85,7 +84,8 @@ int main(void) {
     int64s_list *pos;
     list_for_each_entry(pos, mylist, list_node) {
       int64s *entry = (int64s *)pos;
-      for (int i = 0; i < entry->len; ++i) printf("%ld ", entry->data[i]);
+      for (int i = 0; i < entry->len; ++i)
+        printf("%ld ", entry->data[i]);
       printf("\nfibs %td:%td\n", entry->cap, entry->len);
     }
 
@@ -103,8 +103,7 @@ int main(void) {
     snprintf(k, sz, "key-%d", i);
     char *v = New(&arena, char, sz);
     int n = snprintf(v, sz, "%d", 10000 + i);
-    sz_string_view_t val = {v, n};
-    ssmap_itr it = vt_insert(&mymap, k, val);
+    ssmap_itr it = vt_insert(&mymap, k, v);
     uprintf("%S\n", &it);
   }
 
@@ -122,8 +121,7 @@ int main(void) {
   }
 
   for (ssmap_itr it = vt_first(&mymap); !vt_is_end(it); it = vt_next(it)) {
-    sz_string_view_t v = it.data->val;
-    printf("%s, %.*s\n", it.data->key, v.length, v.start);
+    printf("%s, %s\n", it.data->key, it.data->val);
   }
 
   ARENA_LOG(arena);
