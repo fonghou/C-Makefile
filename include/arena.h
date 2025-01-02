@@ -80,11 +80,11 @@ enum {
 
 #define ARENA_PUSH(Local, A)   (Local).beg = &(byte*){*(A).beg}
 
-#define ARENA_OOM(A)                               \
-  ({                                               \
-    Arena *a_ = (A);                               \
-    a_->jmpbuf = New(a_, void*, _JBLEN, SOFTFAIL); \
-    !a_->jmpbuf || setjmp(a_->jmpbuf);             \
+#define ARENA_OOM(A)                                \
+  ({                                                \
+    Arena *a_ = (A);                                \
+    a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL); \
+    !a_->jmpbuf || setjmp((void *)a_->jmpbuf);      \
   })
 
 #define Push(S, A)                                               \
@@ -174,7 +174,7 @@ oomjmp:
   if (flags & SOFTFAIL || !a->jmpbuf) return NULL;
 #ifndef OOM
   assert(a->jmpbuf);
-  longjmp(a->jmpbuf, 1);
+  longjmp((void *)a->jmpbuf, 1);
 #else
   assert(!OOM);
 #endif

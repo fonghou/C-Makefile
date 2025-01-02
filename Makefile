@@ -21,6 +21,8 @@ all: debug
 deps:
 	(cd include; pkg.sh import)
 	curl --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
+	curl --output-dir include -O https://raw.githubusercontent.com/ibireme/yyjson/refs/heads/master/src/yyjson.h
+	curl --output-dir include -O https://raw.githubusercontent.com/ibireme/yyjson/refs/heads/master/src/yyjson.c
 
 .PHONY: watch
 watch:
