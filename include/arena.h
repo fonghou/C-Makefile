@@ -29,9 +29,9 @@ void autofree_impl(void *p) { free(*((void **)p)); }
 #endif
 
 #if defined(__GNUC__) && !defined(__APPLE__)
-#define _JBLEN  5
 #define setjmp  __builtin_setjmp
 #define longjmp __builtin_longjmp
+#define _JBLEN  5
 #else
 #include <setjmp.h>
 #endif

@@ -1,6 +1,4 @@
 -I
 ./include
 -I
-/opt/cosmocc/include/
--I
 STC/include
