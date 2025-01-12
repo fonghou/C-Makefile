@@ -20,10 +20,8 @@ all: debug
 .PHONY: deps
 deps:
 	(cd include; ../pkg.sh import)
-	curl -s --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
-	curl -s --output-dir include -O https://raw.githubusercontent.com/ibireme/yyjson/refs/heads/master/src/yyjson.h
-	curl -s --output-dir include -O https://raw.githubusercontent.com/ibireme/yyjson/refs/heads/master/src/yyjson.c
 	git pull --recurse-submodules
+	curl -s --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
 
 .PHONY: watch
 watch:

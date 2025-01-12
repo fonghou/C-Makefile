@@ -1,3 +1,4 @@
 import github.com/tidwall/bgen
 import github.com/tidwall/neco
 import github.com/tidwall/tstr
+import github.com/tidwall/json.c
