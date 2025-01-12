@@ -10,9 +10,9 @@ LIB :=$(addprefix -l,stc)
 WARN = -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
 SANZ += -fsanitize-trap=unreachable -fsanitize=undefined #,address
 
-CPPFLAGS += -MMD -MP -Iinclude -ISTC/include
-CFLAGS   += -O0 -g -fno-omit-frame-pointer -fno-common $(SANZ) $(WARN)
-LDFLAGS  += $(LIB) $(SANZ)
+CPPFLAGS += -MMD -MP -I./include -I./STC/include
+CFLAGS   += -fno-omit-frame-pointer -fno-common $(SANZ) $(WARN)
+LDFLAGS  += -L./STC/build $(LIB) $(SANZ)
 
 .PHONY: all
 all: debug
@@ -20,9 +20,10 @@ all: debug
 .PHONY: deps
 deps:
 	(cd include; ../pkg.sh import)
-	curl --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
-	curl --output-dir include -O https://raw.githubusercontent.com/ibireme/yyjson/refs/heads/master/src/yyjson.h
-	curl --output-dir include -O https://raw.githubusercontent.com/ibireme/yyjson/refs/heads/master/src/yyjson.c
+	curl -s --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
+	curl -s --output-dir include -O https://raw.githubusercontent.com/ibireme/yyjson/refs/heads/master/src/yyjson.h
+	curl -s --output-dir include -O https://raw.githubusercontent.com/ibireme/yyjson/refs/heads/master/src/yyjson.c
+	git pull --recurse-submodules
 
 .PHONY: watch
 watch:
@@ -33,7 +34,7 @@ debug: CFLAGS += -Og -g3
 debug: $(TARGET)
 
 release: CFLAGS  += -O3 -DNDEBUG
-release: LDFLAGS += # -static-libgcc -static-libubsan
+release: LDFLAGS += -static-libgcc -static-libubsan
 release: $(TARGET)
 
 .PHONY: clean
