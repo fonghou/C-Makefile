@@ -8,7 +8,7 @@ DEP :=$(OBJS:.o=.d)
 LIB :=$(addprefix -l,stc)
 
 WARN = -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-SANZ += -fsanitize-trap=unreachable -fsanitize=undefined #,address
+SANZ += -fsanitize-trap=unreachable -fsanitize=undefined,address
 
 CPPFLAGS += -MMD -MP -I./include -I./STC/include
 CFLAGS   += -fno-omit-frame-pointer -fno-common $(SANZ) $(WARN)
@@ -20,7 +20,7 @@ all: debug
 .PHONY: deps
 deps:
 	(cd include; ../pkg.sh import)
-	git pull --recurse-submodules
+	git submodule update --init --remote --recursive
 	curl -s --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
 
 .PHONY: watch
@@ -31,8 +31,8 @@ watch:
 debug: CFLAGS += -Og -g3
 debug: $(TARGET)
 
-release: CFLAGS  += -O3 -DNDEBUG
-release: LDFLAGS += -static-libgcc -static-libubsan
+release: CFLAGS  += -O3 -g -DNDEBUG
+release: LDFLAGS += -static-libgcc
 release: $(TARGET)
 
 .PHONY: clean
