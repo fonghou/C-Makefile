@@ -44,7 +44,7 @@ struct Arena {
   byte **beg;
   byte *end;
   void **jmpbuf;
-  Arena *persist;
+  Arena *parent;
 };
 
 enum {
@@ -84,7 +84,7 @@ enum {
   ({                                                \
     Arena *a_ = (A);                                \
     a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL); \
-    !a_->jmpbuf || setjmp((void *)a_->jmpbuf);      \
+    !a_->jmpbuf || setjmp(a_->jmpbuf);              \
   })
 
 #define Push(S, A)                                               \
@@ -128,7 +128,7 @@ static inline Arena newarena(byte **mem, ssize size) {
 }
 
 static inline bool isscratch(Arena *a) {
-  return !!a->persist;
+  return !!a->parent;
 }
 
 static inline Arena getscratch(Arena *a) {
@@ -138,7 +138,7 @@ static inline Arena getscratch(Arena *a) {
   scratch.beg = &a->end;
   scratch.end = *a->beg;
   scratch.jmpbuf = a->jmpbuf;
-  scratch.persist = a;
+  scratch.parent = a;
   return scratch;
 }
 
@@ -146,7 +146,7 @@ static inline void *arena_alloc(Arena *a, ssize size, ssize align, ssize count, 
   byte *ret = 0;
 
   if (isscratch(a)) {
-    byte *newend = *a->persist->beg;
+    byte *newend = *a->parent->beg;
     if (*a->beg > newend) {
       a->end = newend;
     } else {
@@ -174,7 +174,7 @@ oomjmp:
   if (flags & SOFTFAIL || !a->jmpbuf) return NULL;
 #ifndef OOM
   assert(a->jmpbuf);
-  longjmp((void *)a->jmpbuf, 1);
+  longjmp(a->jmpbuf, 1);
 #else
   assert(!OOM);
 #endif
