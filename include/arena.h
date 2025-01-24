@@ -78,7 +78,7 @@ enum {
 #define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), alignof(t), n, 0)
 #define ARENA_NEW4(a, t, n, z)         (t *)arena_alloc(a, sizeof(t), alignof(t), n, z)
 
-#define ARENA_PUSH(Local, A)   (Local).beg = &(byte*){*(A).beg}
+#define ARENA_PUSH(local, A)           Arena local = A; local.beg = &(byte *){*A.beg}
 
 #define ARENA_OOM(A)                                \
   ({                                                \
@@ -188,24 +188,23 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
   } replica;
   memcpy(&replica, slice, sizeof(replica));
 
-  const int grow = 32;
+  const int grow = 16;
 
   if (!replica.cap) {
     replica.cap = grow;
     replica.data = arena_alloc(a, size, align, replica.cap, 0);
-  } else if ((*a->beg < a->end) &&
-             ((uintptr_t)*a->beg - size * replica.cap == (uintptr_t)replica.data)) {
-    // grow in place
+  } else if ((*a->beg < a->end)          // bump upwards
+          && ((uintptr_t)replica.data == // grow in place
+              (uintptr_t)*a->beg - size * replica.cap)) {
     arena_alloc(a, size, 1, grow, 0);
     replica.cap += grow;
   } else {
-    replica.cap += grow;
-    void *data = arena_alloc(a, size, align, replica.cap, 0);
+    replica.cap += replica.cap / 2;     // grow by 1.5
+    void *dest = arena_alloc(a, size, align, replica.cap, 0);
     void *src = replica.data;
-    void *dest = data;
     ssize len = size * replica.len;
     memcpy(dest, src, len);
-    replica.data = data;
+    replica.data = dest;
   }
 
   memcpy(slice, &replica, sizeof(replica));
