@@ -8,7 +8,6 @@
 */
 
 #include <memory.h>
-#include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -74,35 +73,35 @@ enum {
 
 #define New(...)                       ARENA_NEWX(__VA_ARGS__, ARENA_NEW4, ARENA_NEW3, ARENA_NEW2)(__VA_ARGS__)
 #define ARENA_NEWX(a, b, c, d, e, ...) e
-#define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), alignof(t), 1, 0)
-#define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), alignof(t), n, 0)
-#define ARENA_NEW4(a, t, n, z)         (t *)arena_alloc(a, sizeof(t), alignof(t), n, z)
+#define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, 0)
+#define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
+#define ARENA_NEW4(a, t, n, z)         (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, z)
 
 #define ARENA_PUSH(local, A)           Arena local = A; local.beg = &(byte *){*A.beg}
 
-#define ARENA_OOM(A)                                \
-  ({                                                \
-    Arena *a_ = (A);                                \
-    a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL); \
-    !a_->jmpbuf || setjmp(a_->jmpbuf);              \
+#define ARENA_OOM(A)                                                           \
+  ({                                                                           \
+    Arena *a_ = (A);                                                           \
+    a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL);                            \
+    !a_->jmpbuf || setjmp(a_->jmpbuf);                                         \
   })
 
-#define Push(S, A)                                               \
-  ({                                                             \
-    typeof(S) s_ = (S);                                          \
-    if (s_->len >= s_->cap) {                                    \
-      slice_grow(s_, sizeof(*s_->data), sizeof(*s_->data), (A)); \
-    }                                                            \
-    s_->data + s_->len++;                                        \
+#define Push(S, A)                                                             \
+  ({                                                                           \
+    __typeof__(S) s_ = (S);                                                    \
+    if (s_->len >= s_->cap) {                                                  \
+      slice_grow(s_, sizeof(*s_->data), _Alignof(__typeof__(*s_->data)), (A)); \
+    }                                                                          \
+    s_->data + s_->len++;                                                      \
   })
 
 #ifdef LOGGING
-#  define ARENA_LOG(A)                                                  \
-     fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld end=%ld diff=%ld\n", \
-             __FILE__,                                                  \
-             __LINE__,                                                  \
-            (uintptr_t)(*(A).beg),                                      \
-            (uintptr_t)(A).end,                                         \
+#  define ARENA_LOG(A)                                                         \
+     fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld end=%ld diff=%ld\n",        \
+             __FILE__,                                                         \
+             __LINE__,                                                         \
+            (uintptr_t)(*(A).beg),                                             \
+            (uintptr_t)(A).end,                                                \
             (ssize)((A).end - (*(A).beg)))
 #else
 #  define ARENA_LOG(A)   ((void)0)
