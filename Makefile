@@ -10,8 +10,8 @@ LIB :=$(addprefix -l,stc)
 WARN = -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
 SANZ += -fsanitize-trap=unreachable -fsanitize=undefined,address
 
-CPPFLAGS += -MMD -MP -I./include -I./STC/include
-CFLAGS   += -fno-omit-frame-pointer -fno-common $(SANZ) $(WARN)
+CPPFLAGS += -I./include -I./STC/include
+CFLAGS   += -MMD -MP -fno-omit-frame-pointer -fno-common $(SANZ) $(WARN)
 LDFLAGS  += -L./STC/build $(LIB) $(SANZ)
 
 .PHONY: all
@@ -25,7 +25,7 @@ deps:
 
 .PHONY: watch
 watch:
-	find -name '*.c' -o -name '*.h' | entr -cc clang -I./include -I./STC/include $(WARN) -Wno-macro-redefined -Wno-cast-function-type-mismatch -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
+	find . -name '*.c' -o -name '*.h' | entr -cc clang $(CPPFLAGS) $(WARN) -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
 
 .PHONY: debug release
 debug: CFLAGS += -Og -g3
