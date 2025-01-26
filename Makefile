@@ -25,7 +25,7 @@ deps:
 
 .PHONY: watch
 watch:
-	find -name '*.c' -o -name '*.h' | entr -cc clang -Iinclude $(WARN) -Wno-macro-redefined -Wno-cast-function-type-mismatch -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
+	find -name '*.c' -o -name '*.h' | entr -cc clang -I./include -I./STC/include $(WARN) -Wno-macro-redefined -Wno-cast-function-type-mismatch -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
 
 .PHONY: debug release
 debug: CFLAGS += -Og -g3
