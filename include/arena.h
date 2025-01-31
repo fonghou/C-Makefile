@@ -1,3 +1,4 @@
+// clang-format off
 #ifndef ARENA_H
 #define ARENA_H
 
@@ -13,18 +14,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-// clang-format off
-#if defined(__GNUC__) && !defined(__COSMOCC__)
-void autofree_impl(void *p) { free(*((void **)p)); }
+#ifdef __GNUC__
+static void autofree_impl(void *p) { free(*((void **)p)); }
 #define autofree __attribute__((__cleanup__(autofree_impl)))
 #else
+#warning "autofree is not supported"
 #define autofree
-#endif
-
-#ifdef __COSMOCC__
-#include <cosmo.h>
-#else
-#define gc(THING) (THING)
 #endif
 
 #if defined(__GNUC__) && !defined(__APPLE__)
