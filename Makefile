@@ -8,11 +8,11 @@ DEP :=$(OBJS:.o=.d)
 LIB :=$(addprefix -l,stc)
 
 WARN = -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations
-SANZ += -fsanitize-trap=unreachable -fsanitize=undefined#,address
+SANZ += -fno-omit-frame-pointer -fno-common -fsanitize-trap=unreachable -fsanitize=undefined#,address
 
 CPPFLAGS += -I./include -I./STC/include
-CFLAGS   += -MMD -MP -fno-omit-frame-pointer -fno-common $(SANZ) $(WARN)
-LDFLAGS  += -L./STC/build $(LIB) $(SANZ)
+CFLAGS   += -MMD -MP $(WARN)
+LDFLAGS  += -L./STC/build $(LIB)
 
 .PHONY: all
 all: debug
@@ -28,11 +28,12 @@ watch:
 	find . -name '*.c' -o -name '*.h' | entr -cc clang $(CPPFLAGS) $(WARN) -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
 
 .PHONY: debug release
-debug: CFLAGS += -Og -g3
+debug: CFLAGS += $(SANZ) -O0 -g3 -DLOGGING -DOOM
+debug: LDFLAGS += $(SANZ)
 debug: $(TARGET)
 
 release: CFLAGS  += -O3 -g -DNDEBUG
-release: LDFLAGS += -static-libgcc
+release: LDFLAGS += #-static-libgcc
 release: $(TARGET)
 
 .PHONY: clean

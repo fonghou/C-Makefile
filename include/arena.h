@@ -115,18 +115,6 @@ enum {
 #  define ARENA_LOG(A)   ((void)0)
 #endif
 
-#ifndef NDEBUG
-#  include <assert.h>
-#elif defined(__GNUC__) // -fsantiize=undefined -fsanitize-trap=unreachable
-#  define assert(c)  do if (!(c)) __builtin_unreachable(); while(0)
-#elif defined(_MSC_VER)
-#  define assert(c)  do if (!(c)) __debugbreak(); while(0)
-#elif defined(__x86_64__)
-#  define assert(c)  do if (!(c)) __asm__("int3; nop"); while(0)
-#else
-#  define assert(c)  do if (!(c)) __builtin_trap(); while(0)
-#endif
-
 static inline Arena newarena(byte **mem, ssize size) {
   Arena a = {0};
   a.beg = mem;
@@ -180,7 +168,6 @@ static inline void *arena_alloc(Arena *a, ssize size, ssize align, ssize count, 
 oomjmp:
   if (flags & SOFTFAIL || !a->jmpbuf) return NULL;
 #ifndef OOM
-  assert(a->jmpbuf);
   longjmp(a->jmpbuf, 1);
 #else
   assert(!OOM);
