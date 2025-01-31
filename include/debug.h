@@ -1,7 +1,7 @@
-#if !defined(NDEBUG) && __has_include("elf.h")
+#if defined(LOGGING) && __has_include("elf.h") && !defined(__COSMOCC__)
 #define __linux__
 #define UPRINTF_IMPLEMENTATION
 #include "uprintf.h"
-#elif !defined(__COSMOCC__)
+#else
 #define uprintf(fmt, ...) (void)0;
 #endif
