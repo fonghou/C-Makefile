@@ -77,7 +77,7 @@ enum {
 #define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
 #define ARENA_NEW4(a, t, n, z)         (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, z)
 
-#define ARENA_PUSH(local, A)           Arena local = A; local.beg = &(byte *){*A.beg}
+#define ARENA_PUSH(local, A)           Arena local = A; local.beg = &(byte *){*(A).beg}
 
 #define ARENA_OOM(A)                                                           \
   ({                                                                           \
