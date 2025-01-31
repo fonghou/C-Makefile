@@ -15,10 +15,20 @@
 #include <stdlib.h>
 
 #ifdef __GNUC__
+
 static void autofree_impl(void *p) { free(*((void **)p)); }
 #define autofree __attribute__((__cleanup__(autofree_impl)))
+
+#define defer __DEFER(__COUNTER__)
+#define __DEFER(N) __DEFER_(N)
+#define __DEFER_(N) __DEFER__(__DEFER_FUNCTION_##N, __DEFER_VARIABLE_##N)
+#define __DEFER__(F, V)                                                        \
+  auto void F(int *);                                                          \
+  __attribute__((__cleanup__(F))) int V;                                       \
+  auto void F(int *)
+
 #else
-#warning "autofree is not supported"
+#warning "autofree/defer not supported"
 #define autofree
 #endif
 
@@ -72,14 +82,17 @@ enum {
 #define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
 #define ARENA_NEW4(a, t, n, z)         (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, z)
 
-#define ARENA_PUSH(local, A)           Arena local = A; local.beg = &(byte *){*(A).beg}
-
 #define ARENA_OOM(A)                                                           \
   ({                                                                           \
     Arena *a_ = (A);                                                           \
     a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL);                            \
     !a_->jmpbuf || setjmp(a_->jmpbuf);                                         \
   })
+
+#define ARENA_PUSH(NAME)                                                       \
+  Arena NAME_##__LINE__ = NAME;                                                \
+  Arena NAME = NAME_##__LINE__;                                                \
+  NAME.beg = &(byte *) { *(NAME_##__LINE__).beg }
 
 #define Push(S, A)                                                             \
   ({                                                                           \
@@ -92,10 +105,10 @@ enum {
 
 #ifdef LOGGING
 #  define ARENA_LOG(A)                                                         \
-     fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld end=%ld diff=%ld\n",        \
+     fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld->%ld end=%ld diff=%ld\n",   \
              __FILE__,                                                         \
              __LINE__,                                                         \
-            (uintptr_t)(*(A).beg),                                             \
+            (uintptr_t)((A).beg), (uintptr_t)(*(A).beg),                       \
             (uintptr_t)(A).end,                                                \
             (ssize)((A).end - (*(A).beg)))
 #else
