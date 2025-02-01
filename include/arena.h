@@ -43,7 +43,7 @@ typedef struct Arena Arena;
 struct Arena {
   byte **beg;
   byte *end;
-  void **jmpbuf;
+  void **oomjmp;
   Arena *parent;
 };
 
@@ -81,8 +81,8 @@ enum {
 #define ARENA_OOM(A)                                                           \
   ({                                                                           \
     Arena *a_ = (A);                                                           \
-    a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL);                            \
-    !a_->jmpbuf || setjmp(a_->jmpbuf);                                         \
+    a_->oomjmp = New(a_, void *, _JBLEN, SOFTFAIL);                            \
+    !a_->oomjmp || setjmp(a_->oomjmp);                                         \
   })
 
 #define ARENA_PUSH(NAME)                                                       \
@@ -128,28 +128,26 @@ static inline Arena getscratch(Arena *a) {
   Arena scratch = {0};
   scratch.beg = &a->end;
   scratch.end = *a->beg;
-  scratch.jmpbuf = a->jmpbuf;
+  scratch.oomjmp = a->oomjmp;
   scratch.parent = a;
   return scratch;
 }
 
-static inline void *arena_alloc(Arena *a, ssize size, ssize align, ssize count, unsigned flags) {
-  Arena *arena = a;
+static inline void *arena_alloc(Arena *arena, ssize size, ssize align, ssize count, unsigned flags) {
   assert(arena);
-  byte *ret = 0;
 
-  if (isscratch(a)) {
-    byte *newend = *a->parent->beg;
-    if (*a->beg > newend) {
-      a->end = newend;
+  if (isscratch(arena)) {
+    byte *newend = *arena->parent->beg;
+    if (*arena->beg > newend) {
+      arena->end = newend;
     } else {
       goto oomjmp;
     }
   }
 
-  int is_forward = *a->beg < a->end;
-  ssize avail = is_forward ? (a->end - *a->beg) : (*a->beg - a->end);
-  ssize padding = (is_forward ? -1 : 1) * (uintptr_t)*a->beg & (align - 1);
+  int is_forward = *arena->beg < arena->end;
+  ssize avail = is_forward ? (arena->end - *arena->beg) : (*arena->beg - arena->end);
+  ssize padding = (is_forward ? -1 : 1) * (uintptr_t)*arena->beg & (align - 1);
   bool oom = count > (avail - padding) / size;
   if (oom) {
     goto oomjmp;
@@ -158,15 +156,15 @@ static inline void *arena_alloc(Arena *a, ssize size, ssize align, ssize count, 
   // Calculate new position
   ssize total_size = size * count;
   ssize offset = (is_forward ? 1 : -1) * (padding + total_size);
-  *a->beg += offset;
-  ret = is_forward ? (*a->beg - total_size) : *a->beg;
+  *arena->beg += offset;
+  byte *ret = is_forward ? (*arena->beg - total_size) : *arena->beg;
 
   return flags & NOINIT ? ret : memset(ret, 0, total_size);
 
 oomjmp:
-  if (flags & SOFTFAIL || !a->jmpbuf) return NULL;
+  if (flags & SOFTFAIL || !arena->oomjmp) return NULL;
 #ifndef OOM
-  longjmp(a->jmpbuf, 1);
+  longjmp(arena->oomjmp, 1);
 #else
   assert(!OOM);
 #endif

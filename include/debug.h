@@ -6,8 +6,8 @@
 #define assert(c)                                                              \
   do {                                                                         \
     if (!(c)) {                                                                \
-      fprintf(stderr, "Assertion failed: %s at %s:%d\n", #c,                   \
-              __FILE__, __LINE__);                                             \
+      fprintf(stderr, "Assertion failed: %s in function %s at %s:%d\n", #c,    \
+              __func__, __FILE__, __LINE__);                                   \
       __builtin_trap();                                                        \
     }                                                                          \
   } while (0)
@@ -15,8 +15,8 @@
 #define assert(c)                                                              \
   do {                                                                         \
     if (!(c)) {                                                                \
-      fprintf(stderr, "Assertion failed: %s at %s:%d\n", #c,                   \
-              __FILE__, __LINE__);                                             \
+      fprintf(stderr, "Assertion failed: %s in function %s at %s:%d\n", #c,    \
+              __func__, __FILE__, __LINE__);                                   \
       __debugbreak();                                                          \
     }                                                                          \
   } while (0)
@@ -24,8 +24,8 @@
 #define assert(c)                                                              \
   do {                                                                         \
     if (!(c)) {                                                                \
-      fprintf(stderr, "Assertion failed: %s at %s:%d\n", #c,                   \
-              __FILE__, __LINE__);                                             \
+      fprintf(stderr, "Assertion failed: %s in function %s at %s:%d\n", #c,    \
+              __func__, __FILE__, __LINE__);                                   \
       __asm__ volatile("int3; nop");                                           \
     }                                                                          \
   } while (0)
