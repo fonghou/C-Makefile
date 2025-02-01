@@ -8,7 +8,7 @@ DEP :=$(OBJS:.o=.d)
 LIB :=$(addprefix -l,stc)
 
 WARN = -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations
-SANZ += -fno-omit-frame-pointer -fno-common -fsanitize-trap=unreachable -fsanitize=undefined#,address
+SANZ += -fno-omit-frame-pointer -fno-common -fsanitize-trap=unreachable -fsanitize=undefined,address
 
 CPPFLAGS += -I./include -I./STC/include
 CFLAGS   += -MMD -MP $(WARN)

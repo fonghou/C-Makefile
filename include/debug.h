@@ -1,13 +1,8 @@
 // clang-format off
-#if defined(LOGGING) && __has_include("elf.h") && !defined(__COSMOCC__)
-#define __linux__
-#define UPRINTF_IMPLEMENTATION
-#include "uprintf.h"
-#else
-#define uprintf(fmt, ...) (void)0;
-#endif
 
-#if defined(__GNUC__)
+#include <stdio.h>
+
+#if defined(__GNUC__) || defined(__clang__)
 #define assert(c)                                                              \
   do {                                                                         \
     if (!(c)) {                                                                \
@@ -34,4 +29,14 @@
       __asm__ volatile("int3; nop");                                           \
     }                                                                          \
   } while (0)
+#else
+#include <assert.h>
+#endif
+
+#if defined(LOGGING) && __has_include("elf.h") && !defined(__COSMOCC__)
+#define __linux__
+#define UPRINTF_IMPLEMENTATION
+#include "uprintf.h"
+#else
+#define uprintf(fmt, ...) (void)0;
 #endif

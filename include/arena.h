@@ -14,11 +14,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#ifdef __GNUC__
+#if __has_include("debug.h")
+#include "debug.h"
+#else
+#include <assert.h>
+#endif
 
+#ifdef __GNUC__
 static void autofree_impl(void *p) { free(*((void **)p)); }
 #define autofree __attribute__((__cleanup__(autofree_impl)))
-
 #define defer __DEFER(__COUNTER__)
 #define __DEFER(N) __DEFER_(N)
 #define __DEFER_(N) __DEFER__(__DEFER_FUNCTION_##N, __DEFER_VARIABLE_##N)
@@ -26,7 +30,6 @@ static void autofree_impl(void *p) { free(*((void **)p)); }
   auto void F(int *);                                                          \
   __attribute__((__cleanup__(F))) int V;                                       \
   auto void F(int *)
-
 #else
 #warning "autofree/defer not supported"
 #define autofree
@@ -138,6 +141,8 @@ static inline Arena getscratch(Arena *a) {
 }
 
 static inline void *arena_alloc(Arena *a, ssize size, ssize align, ssize count, unsigned flags) {
+  Arena *arena = a;
+  assert(arena);
   byte *ret = 0;
 
   if (isscratch(a)) {
@@ -204,18 +209,40 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
   memcpy(slice, &replica, sizeof(replica));
 }
 
+#define MAX_ALIGN _Alignof(max_align_t)
+
 #ifdef GLOBAL_ARENA
 #define GLOBAL_ARENA_MALLOC_FN GLOBAL_ARENA##_malloc
 #define GLOBAL_ARENA_FREE_FN GLOBAL_ARENA##_free
 
 Arena *GLOBAL_ARENA = NULL;
 
-void *GLOBAL_ARENA_MALLOC_FN(size_t size) {
+void *GLOBAL_ARENA_MALLOC_FN(size_t sz) {
   assert(GLOBAL_ARENA);
-  return arena_alloc(GLOBAL_ARENA, size, sizeof(max_align_t), 1, 0);
+  return arena_alloc(GLOBAL_ARENA, sz, MAX_ALIGN, 1, 0);
 }
 
 void GLOBAL_ARENA_FREE_FN(void *ptr) {}
 #endif
+
+// STC allocator
+static byte *arena_realloc(Arena *a, void *old_p, ssize old_sz, ssize sz, unsigned flags) {
+  if (!old_p) return arena_alloc(a, sz, MAX_ALIGN, 1, flags);
+
+  // grow in place
+  if((*a->beg < a->end) && (uintptr_t)old_p == (uintptr_t)*a->beg - old_sz) {
+    void *p = arena_alloc(a, sz - old_sz, 1, 1, flags);
+    assert(p - old_p == old_sz);
+    return old_p;
+  }
+
+  void *p = arena_alloc(a, sz, MAX_ALIGN, 1, flags);
+  return p ? memcpy(p, old_p, old_sz) : NULL;
+}
+
+#define arena_malloc(sz)              arena_alloc(self->aux.arena, (sz), MAX_ALIGN, 1, NOINIT)
+#define arena_calloc(n, sz)           arena_alloc(self->aux.arena, (sz), MAX_ALIGN, (n), 0)
+#define arena_realloc(p, old_sz, sz)  arena_realloc(self->aux.arena, (p), (old_sz), (sz), NOINIT)
+#define arena_free(p, sz)             (void)0
 
 #endif  // ARENA_H
