@@ -23,15 +23,8 @@
 #ifdef __GNUC__
 static void autofree_impl(void *p) { free(*((void **)p)); }
 #define autofree __attribute__((__cleanup__(autofree_impl)))
-#define defer __DEFER(__COUNTER__)
-#define __DEFER(N) __DEFER_(N)
-#define __DEFER_(N) __DEFER__(__DEFER_FUNCTION_##N, __DEFER_VARIABLE_##N)
-#define __DEFER__(F, V)                                                        \
-  auto void F(int *);                                                          \
-  __attribute__((__cleanup__(F))) int V;                                       \
-  auto void F(int *)
 #else
-#warning "autofree/defer not supported"
+#warning "autofree is not supported"
 #define autofree
 #endif
 
