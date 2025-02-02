@@ -1,4 +1,3 @@
-// clang-format off
 #ifndef ARENA_H
 #define ARENA_H
 
@@ -13,6 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+#define MAX_ALIGN _Alignof(max_align_t)
 
 #if __has_include("debug.h")
 #include "debug.h"
@@ -43,7 +44,7 @@ typedef struct Arena Arena;
 struct Arena {
   byte **beg;
   byte *end;
-  void **oomjmp;
+  void **jmpbuf;
   Arena *parent;
 };
 
@@ -81,8 +82,8 @@ enum {
 #define ARENA_OOM(A)                                                           \
   ({                                                                           \
     Arena *a_ = (A);                                                           \
-    a_->oomjmp = New(a_, void *, _JBLEN, SOFTFAIL);                            \
-    !a_->oomjmp || setjmp(a_->oomjmp);                                         \
+    a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL);                            \
+    !a_->jmpbuf || setjmp(a_->jmpbuf);                                         \
   })
 
 #define ARENA_PUSH(NAME)                                                       \
@@ -128,7 +129,7 @@ static inline Arena getscratch(Arena *a) {
   Arena scratch = {0};
   scratch.beg = &a->end;
   scratch.end = *a->beg;
-  scratch.oomjmp = a->oomjmp;
+  scratch.jmpbuf = a->jmpbuf;
   scratch.parent = a;
   return scratch;
 }
@@ -141,7 +142,7 @@ static inline void *arena_alloc(Arena *arena, ssize size, ssize align, ssize cou
     if (*arena->beg > newend) {
       arena->end = newend;
     } else {
-      goto oomjmp;
+      goto handle_oom;
     }
   }
 
@@ -150,7 +151,7 @@ static inline void *arena_alloc(Arena *arena, ssize size, ssize align, ssize cou
   ssize padding = (is_forward ? -1 : 1) * (uintptr_t)*arena->beg & (align - 1);
   bool oom = count > (avail - padding) / size;
   if (oom) {
-    goto oomjmp;
+    goto handle_oom;
   }
 
   // Calculate new position
@@ -161,12 +162,13 @@ static inline void *arena_alloc(Arena *arena, ssize size, ssize align, ssize cou
 
   return flags & NOINIT ? ret : memset(ret, 0, total_size);
 
-oomjmp:
-  if (flags & SOFTFAIL || !arena->oomjmp) return NULL;
+handle_oom:
+  if (flags & SOFTFAIL || !arena->jmpbuf) return NULL;
 #ifndef OOM
-  longjmp(arena->oomjmp, 1);
+  longjmp(arena->jmpbuf, 1);
 #else
   assert(!OOM);
+  abort();
 #endif
 }
 
@@ -184,7 +186,7 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
     replica.cap = grow;
     replica.data = arena_alloc(a, size, align, replica.cap, 0);
   } else if ((*a->beg < a->end)          // bump upwards
-          && ((uintptr_t)replica.data == // grow in place
+          && ((uintptr_t)replica.data == // grow inplace
               (uintptr_t)*a->beg - size * replica.cap)) {
     arena_alloc(a, size, 1, grow, 0);
     replica.cap += grow;
@@ -200,30 +202,43 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
   memcpy(slice, &replica, sizeof(replica));
 }
 
-#define MAX_ALIGN _Alignof(max_align_t)
-
 #ifdef GLOBAL_ARENA
 extern Arena *GLOBAL_ARENA;
 
 #define CONCAT0(a, b) a ## b
 #define CONCAT(a, b)  CONCAT0(a, b)
 
-#define GLOBAL_ARENA_MALLOC_FN CONCAT(GLOBAL_ARENA, _malloc)
-#define GLOBAL_ARENA_FREE_FN   CONCAT(GLOBAL_ARENA, _free)
+#define GLOBAL_ARENA_MALLOC   CONCAT(GLOBAL_ARENA, _malloc)
+#define GLOBAL_ARENA_CALLOC   CONCAT(GLOBAL_ARENA, _calloc)
+#define GLOBAL_ARENA_REALLOC  CONCAT(GLOBAL_ARENA, _realloc)
+#define GLOBAL_ARENA_FREE     CONCAT(GLOBAL_ARENA, _free)
 
-void *GLOBAL_ARENA_MALLOC_FN(size_t sz) {
+void *GLOBAL_ARENA_MALLOC(size_t sz) {
   assert(GLOBAL_ARENA);
-  return arena_alloc(GLOBAL_ARENA, sz, MAX_ALIGN, 1, 0);
+  return arena_alloc(GLOBAL_ARENA, sz, MAX_ALIGN, 1, NOINIT);
 }
 
-void GLOBAL_ARENA_FREE_FN(void *ptr) {}
+void *GLOBAL_ARENA_CALLOC(size_t num, size_t sz) {
+  assert(GLOBAL_ARENA);
+  return arena_alloc(GLOBAL_ARENA, sz, MAX_ALIGN, num, 0);
+}
+
+void *GLOBAL_ARENA_REALLOC(void *src, size_t sz) {
+  if (!sz) return NULL;
+  void *dest = GLOBAL_ARENA_MALLOC(sz);
+  return src ? memmove(dest, src, sz): dest;
+}
+
+void GLOBAL_ARENA_FREE(void *ptr) {}
 #endif // GLOBAL_ARENA
 
 // STC allocator
-static byte *arena_realloc(Arena *a, void *old_p, ssize old_sz, ssize sz, unsigned flags) {
+static inline void *arena_realloc(Arena *a, void *old_p, ssize old_sz, ssize sz, unsigned flags) {
   if (!old_p) return arena_alloc(a, sz, MAX_ALIGN, 1, flags);
 
-  // grow in place
+  if (sz <= old_sz) return old_p; // no-op
+
+  // grow inplace
   if((*a->beg < a->end) && (uintptr_t)old_p == (uintptr_t)*a->beg - old_sz) {
     void *p = arena_alloc(a, sz - old_sz, 1, 1, flags);
     assert(p - old_p == old_sz);
