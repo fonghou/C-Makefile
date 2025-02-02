@@ -203,10 +203,13 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
 #define MAX_ALIGN _Alignof(max_align_t)
 
 #ifdef GLOBAL_ARENA
-#define GLOBAL_ARENA_MALLOC_FN GLOBAL_ARENA##_malloc
-#define GLOBAL_ARENA_FREE_FN GLOBAL_ARENA##_free
+extern Arena *GLOBAL_ARENA;
 
-Arena *GLOBAL_ARENA = NULL;
+#define CONCAT0(a, b) a ## b
+#define CONCAT(a, b)  CONCAT0(a, b)
+
+#define GLOBAL_ARENA_MALLOC_FN CONCAT(GLOBAL_ARENA, _malloc)
+#define GLOBAL_ARENA_FREE_FN   CONCAT(GLOBAL_ARENA, _free)
 
 void *GLOBAL_ARENA_MALLOC_FN(size_t sz) {
   assert(GLOBAL_ARENA);
@@ -214,7 +217,7 @@ void *GLOBAL_ARENA_MALLOC_FN(size_t sz) {
 }
 
 void GLOBAL_ARENA_FREE_FN(void *ptr) {}
-#endif
+#endif // GLOBAL_ARENA
 
 // STC allocator
 static byte *arena_realloc(Arena *a, void *old_p, ssize old_sz, ssize sz, unsigned flags) {
