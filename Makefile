@@ -21,6 +21,7 @@ all: debug
 deps:
 	(cd include; ../pkg.sh import)
 	git submodule update --init --remote --recursive
+	curl -s --output-dir include -O https://raw.githubusercontent.com/JacksonAllan/CC/refs/heads/dev/cc.h
 	curl -s --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
 
 .PHONY: watch
