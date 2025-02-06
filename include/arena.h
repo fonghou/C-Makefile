@@ -202,36 +202,6 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
   memcpy(slice, &replica, sizeof(replica));
 }
 
-#ifdef GLOBAL_ARENA
-extern Arena *GLOBAL_ARENA;
-
-#define CONCAT0(a, b) a ## b
-#define CONCAT(a, b)  CONCAT0(a, b)
-
-#define GLOBAL_ARENA_MALLOC   CONCAT(GLOBAL_ARENA, _malloc)
-#define GLOBAL_ARENA_CALLOC   CONCAT(GLOBAL_ARENA, _calloc)
-#define GLOBAL_ARENA_REALLOC  CONCAT(GLOBAL_ARENA, _realloc)
-#define GLOBAL_ARENA_FREE     CONCAT(GLOBAL_ARENA, _free)
-
-void *GLOBAL_ARENA_MALLOC(size_t sz) {
-  assert(GLOBAL_ARENA);
-  return arena_alloc(GLOBAL_ARENA, sz, MAX_ALIGN, 1, NOINIT);
-}
-
-void *GLOBAL_ARENA_CALLOC(size_t num, size_t sz) {
-  assert(GLOBAL_ARENA);
-  return arena_alloc(GLOBAL_ARENA, sz, MAX_ALIGN, num, 0);
-}
-
-void *GLOBAL_ARENA_REALLOC(void *src, size_t sz) {
-  if (!sz) return NULL;
-  void *dest = GLOBAL_ARENA_MALLOC(sz);
-  return src ? memmove(dest, src, sz): dest;
-}
-
-void GLOBAL_ARENA_FREE(void *ptr) {}
-#endif // GLOBAL_ARENA
-
 // STC allocator
 static inline void *arena_realloc(Arena *a, void *old_p, ssize old_sz, ssize sz, unsigned flags) {
   if (!old_p) return arena_alloc(a, sz, MAX_ALIGN, 1, flags);
