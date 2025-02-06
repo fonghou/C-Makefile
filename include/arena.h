@@ -8,7 +8,6 @@
 */
 
 #include <memory.h>
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -38,14 +37,13 @@ static void autofree_impl(void *p) { free(*((void **)p)); }
 #endif
 
 typedef ptrdiff_t ssize;
-typedef unsigned char byte;
+typedef uint8_t byte;
 
 typedef struct Arena Arena;
 struct Arena {
   byte **beg;
   byte *end;
   void **jmpbuf;
-  Arena *parent;
 };
 
 enum {
@@ -55,21 +53,28 @@ enum {
 
 /** Usage:
 
-  ssize cap = 1 << 20;
-  void *heap = malloc(cap);
-  Arena global = newarena(&(byte *){heap}, cap);
+  enum { ARENA_SIZE = 1 << 20 };
+  autofree void *mem = malloc(ARENA_SIZE);
+  Arena arena = NewArena(&(byte *){mem}, ARENA_SIZE);
 
-  if (ARENA_OOM(&global)) {
+  if (ArenaOOM(&arena)) {
     abort();
   }
 
-  Arena scratch = getscratch(&global);
+  { // shadowed/nested arena within block scope
+    PushArena(arena);
 
-  thing *x = New(&global, thing);
-  thing *y = New(&scratch, thing);
-  thing *z = helper(scratch);
+    This *x = New(&arena, This);
+    This *y = foo(arena);
 
-  free(heap);
+    // x, y should not assign to any variable outside of this block
+
+    ...
+
+    // PopArena(arena); // implicitly
+  }
+
+  That z[] = New(&arena, That, 10);
 
 */
 
@@ -79,29 +84,23 @@ enum {
 #define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
 #define ARENA_NEW4(a, t, n, z)         (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, z)
 
-#define ARENA_OOM(A)                                                           \
+#define ArenaOOM(A)                                                            \
   ({                                                                           \
     Arena *a_ = (A);                                                           \
     a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL);                            \
     !a_->jmpbuf || setjmp(a_->jmpbuf);                                         \
   })
 
-#define ARENA_PUSH(NAME)                                                       \
+// PushArena leverages compound literal lifetime
+// and variable shadowing in nested block scope
+#define PushArena(NAME)                                                        \
   Arena NAME_##__LINE__ = NAME;                                                \
   Arena NAME = NAME_##__LINE__;                                                \
   NAME.beg = &(byte *) { *(NAME_##__LINE__).beg }
-
-#define Push(S, A)                                                             \
-  ({                                                                           \
-    __typeof__(S) s_ = (S);                                                    \
-    if (s_->len >= s_->cap) {                                                  \
-      slice_grow(s_, sizeof(*s_->data), _Alignof(__typeof__(*s_->data)), (A)); \
-    }                                                                          \
-    s_->data + s_->len++;                                                      \
-  })
+#define PopArena(NAME)  LogArena(A)
 
 #ifdef LOGGING
-#  define ARENA_LOG(A)                                                         \
+#  define LogArena(A)                                                          \
      fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld->%ld end=%ld diff=%ld\n",   \
              __FILE__,                                                         \
              __LINE__,                                                         \
@@ -109,57 +108,29 @@ enum {
             (uintptr_t)(A).end,                                                \
             (ssize)((A).end - (*(A).beg)))
 #else
-#  define ARENA_LOG(A)   ((void)0)
+#  define LogArena(A)   ((void)A)
 #endif
 
-static inline Arena newarena(byte **mem, ssize size) {
+static inline Arena NewArena(byte **mem, ssize size) {
   Arena a = {0};
   a.beg = mem;
   a.end = *mem ? *mem + size : 0;
   return a;
 }
 
-static inline bool isscratch(Arena *a) {
-  return !!a->parent;
-}
-
-static inline Arena getscratch(Arena *a) {
-  if (isscratch(a)) return *a;
-
-  Arena scratch = {0};
-  scratch.beg = &a->end;
-  scratch.end = *a->beg;
-  scratch.jmpbuf = a->jmpbuf;
-  scratch.parent = a;
-  return scratch;
-}
-
 static inline void *arena_alloc(Arena *arena, ssize size, ssize align, ssize count, unsigned flags) {
   assert(arena);
 
-  if (isscratch(arena)) {
-    byte *newend = *arena->parent->beg;
-    if (*arena->beg > newend) {
-      arena->end = newend;
-    } else {
-      goto handle_oom;
-    }
-  }
-
-  int is_forward = *arena->beg < arena->end;
-  ssize avail = is_forward ? (arena->end - *arena->beg) : (*arena->beg - arena->end);
-  ssize padding = (is_forward ? -1 : 1) * (uintptr_t)*arena->beg & (align - 1);
-  bool oom = count > (avail - padding) / size;
-  if (oom) {
+  byte* current = *arena->beg;
+  ssize avail = arena->end - current;
+  ssize padding = -(uintptr_t)current & (align - 1);
+  if (count > (avail - padding) / size) {
     goto handle_oom;
   }
 
-  // Calculate new position
   ssize total_size = size * count;
-  ssize offset = (is_forward ? 1 : -1) * (padding + total_size);
-  *arena->beg += offset;
-  byte *ret = is_forward ? (*arena->beg - total_size) : *arena->beg;
-
+  *arena->beg += padding + total_size;
+  byte *ret = current + padding;
   return flags & NOINIT ? ret : memset(ret, 0, total_size);
 
 handle_oom:
@@ -172,6 +143,15 @@ handle_oom:
 #endif
 }
 
+#define Push(S, A)                                                             \
+  ({                                                                           \
+    __typeof__(S) s_ = (S);                                                    \
+    if (s_->len >= s_->cap) {                                                  \
+      slice_grow(s_, sizeof(*s_->data), _Alignof(__typeof__(*s_->data)), (A)); \
+    }                                                                          \
+    s_->data + s_->len++;                                                      \
+  })
+
 static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
   struct {
     void *data;
@@ -180,14 +160,13 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
   } replica;
   memcpy(&replica, slice, sizeof(replica));
 
-  const int grow = 16;
+  const int grow = MAX_ALIGN;
 
   if (!replica.cap) {
     replica.cap = grow;
     replica.data = arena_alloc(a, size, align, replica.cap, 0);
-  } else if ((*a->beg < a->end)          // bump upwards
-          && ((uintptr_t)replica.data == // grow inplace
-              (uintptr_t)*a->beg - size * replica.cap)) {
+  } else if ((uintptr_t)replica.data == (uintptr_t)*a->beg - size * replica.cap) {
+    // grow inplace
     arena_alloc(a, size, 1, grow, 0);
     replica.cap += grow;
   } else {
@@ -206,10 +185,10 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
 static inline void *arena_realloc(Arena *a, void *old_p, ssize old_sz, ssize sz, unsigned flags) {
   if (!old_p) return arena_alloc(a, sz, MAX_ALIGN, 1, flags);
 
-  if (sz <= old_sz) return old_p; // no-op
+  if (sz <= old_sz) return old_p; // shrink inplace
 
   // grow inplace
-  if((*a->beg < a->end) && (uintptr_t)old_p == (uintptr_t)*a->beg - old_sz) {
+  if((uintptr_t)old_p == (uintptr_t)*a->beg - old_sz) {
     void *p = arena_alloc(a, sz - old_sz, 1, 1, flags);
     assert(p - old_p == old_sz);
     return old_p;
