@@ -222,8 +222,8 @@ typedef struct astr {
 
 static inline astr astrclone(Arena *arena, astr s) {
   astr s2 = s;
-  // Early return if string is null or already at arena boundary
-  if (!s.data || s.data + s.len == (char *)*arena->beg)
+  // Early return if string is empty or already at arena boundary
+  if (!s.len || s.data + s.len == (char *)*arena->beg)
     return s2;
 
   s2.data = New(arena, char, s.len, NOINIT);
@@ -239,10 +239,10 @@ static inline astr astrconcat(Arena *arena, astr head, astr tail) {
   // Ignore empty head
   if (head.len == 0) {
     // If tail is at arena tip, return it directly; otherwise duplicate
-    return tail.data + tail.len == (char *)*arena->beg ? tail : astrclone(arena, tail);
+    return tail.len && tail.data + tail.len == (char *)*arena->beg ? tail : astrclone(arena, tail);
   }
   // If head isn't at arena tip, duplicate it
-  if (!head.data || head.data + head.len != (char *)*arena->beg) {
+  if (head.data + head.len != (char *)*arena->beg) {
     head = astrclone(arena, head);
   }
   // Now head is guaranteed to be at arena tip, duplicate tail right after
