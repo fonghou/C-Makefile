@@ -270,7 +270,7 @@ static inline astr astrfmt(Arena *arena, const char *format, ...) {
   va_start(args, format);
   int nbytes2 = vsnprintf(data, nbytes + 1, format, args);
   va_end(args);
-  assert(nbytes2 >= 0);
+  assert(nbytes2 == nbytes);
   return (astr){.data = data, .len = nbytes};
 }
 
