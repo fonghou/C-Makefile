@@ -2,17 +2,17 @@ EXE = main
 BUILD_DIR := ./build
 TARGET= $(BUILD_DIR)/$(EXE)
 
-SRC :=$(shell find . -name '*.c' | grep -v STC)
+SRC :=$(shell find . -name '*.c')
 OBJ :=$(SRC:%.c=$(BUILD_DIR)/%.o)
 DEP :=$(OBJS:.o=.d)
-LIB :=$(addprefix -l,stc)
+LIB :=$(addprefix -l,m)
 
 WARN = -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations
 SANZ += -fno-omit-frame-pointer -fno-common -fsanitize-trap=unreachable -fsanitize=undefined,address
 
-CPPFLAGS += -I./include -I./STC/include
+CPPFLAGS += -I./include
 CFLAGS   += -MMD -MP $(WARN)
-LDFLAGS  += -L./STC/build $(LIB)
+LDFLAGS  += $(LIB)
 
 .PHONY: all
 all: debug
@@ -20,7 +20,6 @@ all: debug
 .PHONY: deps
 deps:
 	(cd include; ../pkg.sh import)
-	git submodule update --init --remote --recursive
 	curl -s --output-dir include -O https://raw.githubusercontent.com/JacksonAllan/CC/refs/heads/dev/cc.h
 	curl -s --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
 

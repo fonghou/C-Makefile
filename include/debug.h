@@ -1,3 +1,6 @@
+#ifndef DEBUG_H
+#define DEBUG_H
+
 #if defined(LOGGING) && __has_include("elf.h") && !defined(__COSMOCC__)
 #ifndef __linux
 define __linux__
@@ -40,3 +43,4 @@ define __linux__
 #include <assert.h>
 #endif
 
+#endif
