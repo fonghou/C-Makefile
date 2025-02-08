@@ -54,7 +54,7 @@ struct Arena {
 };
 
 enum {
-  SOFTFAIL = 1 << 0,
+  OOMNULL = 1 << 0,
   NOINIT = 1 << 1,
 };
 
@@ -85,17 +85,20 @@ enum {
 
 */
 
+
 #define New(...)                       ARENA_NEWX(__VA_ARGS__, ARENA_NEW4, ARENA_NEW3, ARENA_NEW2)(__VA_ARGS__)
 #define ARENA_NEWX(a, b, c, d, e, ...) e
 #define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, 0)
 #define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
-#define ARENA_NEW4(a, t, n, z)         (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, z)
+#define ARENA_NEW4(a, t, n, z)         (t *)_Generic((z), \
+  t *:     arena_alloc_init,                              \
+  default: arena_alloc)(a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, default: z))
 
-#define ArenaOOM(A)                                 \
-  ({                                                \
-    Arena *a_ = (A);                                \
-    a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL); \
-    !a_->jmpbuf || setjmp((void *)a_->jmpbuf);      \
+#define ArenaOOM(A)                                \
+  ({                                               \
+    Arena *a_ = (A);                               \
+    a_->jmpbuf = New(a_, void *, _JBLEN, OOMNULL); \
+    !a_->jmpbuf || setjmp((void *)a_->jmpbuf);     \
   })
 
 #define CONCAT0(A,B) A##B
@@ -126,7 +129,7 @@ static inline Arena NewArena(byte **mem, isize size) {
 }
 
 static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count,
-                                unsigned flags) {
+                                int flags) {
   assert(arena);
 
   byte *current = *arena->beg;
@@ -142,7 +145,7 @@ static inline void *arena_alloc(Arena *arena, isize size, isize align, isize cou
   return flags & NOINIT ? ret : memset(ret, 0, total_size);
 
 handle_oom:
-  if (flags & SOFTFAIL || !arena->jmpbuf)
+  if (flags & OOMNULL || !arena->jmpbuf)
     return NULL;
 #ifndef OOM
   longjmp((void *)arena->jmpbuf, 1);
@@ -150,6 +153,13 @@ handle_oom:
   assert(!OOM);
   abort();
 #endif
+}
+
+static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
+                                     const void *const initptr) {
+  assert(initptr);
+  void* ptr = arena_alloc(arena, size, align, count, NOINIT);
+  return memmove(ptr, initptr, size * count);
 }
 
 #define Push(S, A)                                                             \
