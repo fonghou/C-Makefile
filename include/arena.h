@@ -34,6 +34,7 @@ static void autofree_impl(void *p) {
 #endif
 
 #if defined(__GNUC__) && !defined(__APPLE__)
+#undef  setjmp
 #define setjmp  __builtin_setjmp
 #define longjmp __builtin_longjmp
 #define _JBLEN  5
@@ -41,7 +42,7 @@ static void autofree_impl(void *p) {
 #include <setjmp.h>
 #endif
 
-typedef ptrdiff_t ssize;
+typedef ptrdiff_t isize;
 typedef uint8_t byte;
 
 typedef struct Arena Arena;
@@ -93,7 +94,7 @@ enum {
   ({                                                \
     Arena *a_ = (A);                                \
     a_->jmpbuf = New(a_, void *, _JBLEN, SOFTFAIL); \
-    !a_->jmpbuf || setjmp(a_->jmpbuf);              \
+    !a_->jmpbuf || setjmp((void *)a_->jmpbuf);      \
   })
 
 // PushArena leverages compound literal lifetime
@@ -110,30 +111,30 @@ enum {
 #define LogArena(A)                                                                           \
   fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld->%ld end=%ld diff=%ld\n", __FILE__, __LINE__, \
           (uintptr_t)((A).beg), (uintptr_t)(*(A).beg), (uintptr_t)(A).end,                    \
-          (ssize)((A).end - (*(A).beg)))
+          (isize)((A).end - (*(A).beg)))
 #else
 #define LogArena(A) ((void)A)
 #endif
 
-static inline Arena NewArena(byte **mem, ssize size) {
+static inline Arena NewArena(byte **mem, isize size) {
   Arena a = {0};
   a.beg = mem;
   a.end = *mem ? *mem + size : 0;
   return a;
 }
 
-static inline void *arena_alloc(Arena *arena, ssize size, ssize align, ssize count,
+static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count,
                                 unsigned flags) {
   assert(arena);
 
   byte *current = *arena->beg;
-  ssize avail = arena->end - current;
-  ssize padding = -(uintptr_t)current & (align - 1);
+  isize avail = arena->end - current;
+  isize padding = -(uintptr_t)current & (align - 1);
   if (count > (avail - padding) / size) {
     goto handle_oom;
   }
 
-  ssize total_size = size * count;
+  isize total_size = size * count;
   *arena->beg += padding + total_size;
   byte *ret = current + padding;
   return flags & NOINIT ? ret : memset(ret, 0, total_size);
@@ -142,7 +143,7 @@ handle_oom:
   if (flags & SOFTFAIL || !arena->jmpbuf)
     return NULL;
 #ifndef OOM
-  longjmp(arena->jmpbuf, 1);
+  longjmp((void *)arena->jmpbuf, 1);
 #else
   assert(!OOM);
   abort();
@@ -158,11 +159,11 @@ handle_oom:
     s_->data + s_->len++;                                                      \
   })
 
-static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
+static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
   struct {
     void *data;
-    ssize len;
-    ssize cap;
+    isize len;
+    isize cap;
   } replica;
   memcpy(&replica, slice, sizeof(replica));
 
@@ -179,7 +180,7 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
     replica.cap += replica.cap / 2;  // grow by 1.5
     void *dest = arena_alloc(a, size, align, replica.cap, 0);
     void *src = replica.data;
-    ssize len = size * replica.len;
+    isize len = size * replica.len;
     memcpy(dest, src, len);
     replica.data = dest;
   }
@@ -188,7 +189,7 @@ static inline void slice_grow(void *slice, ssize size, ssize align, Arena *a) {
 }
 
 // STC allocator
-static inline void *arena_realloc(Arena *a, void *old_p, ssize old_sz, ssize sz, unsigned flags) {
+static inline void *arena_realloc(Arena *a, void *old_p, isize old_sz, isize sz, unsigned flags) {
   if (!old_p)
     return arena_alloc(a, sz, MAX_ALIGN, 1, flags);
 

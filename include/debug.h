@@ -1,6 +1,15 @@
-#include <stdio.h>
+#if defined(LOGGING) && __has_include("elf.h") && !defined(__COSMOCC__)
+#ifndef __linux
+define __linux__
+#endif
+#define UPRINTF_IMPLEMENTATION
+#include "uprintf.h"
+#else
+#define uprintf(fmt, ...) (void)0;
+#endif
 
 #if defined(__GNUC__) || defined(__clang__)
+#undef assert
 #define assert(c)                                                        \
   do {                                                                   \
     if (!(c)) {                                                          \
@@ -31,10 +40,3 @@
 #include <assert.h>
 #endif
 
-#if defined(LOGGING) && __has_include("elf.h") && !defined(__COSMOCC__)
-#define __linux__
-#define UPRINTF_IMPLEMENTATION
-#include "uprintf.h"
-#else
-#define uprintf(fmt, ...) (void)0;
-#endif
