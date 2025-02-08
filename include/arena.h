@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -97,14 +98,15 @@ enum {
     !a_->jmpbuf || setjmp((void *)a_->jmpbuf);      \
   })
 
+#define CONCAT0(A,B) A##B
+#define CONCAT(A,B)  CONCAT0(A,B)
+
 // PushArena leverages compound literal lifetime
 // and variable shadowing in nested block scope
-#define PushArena(NAME)         \
-  Arena NAME_##__LINE__ = NAME; \
-  Arena NAME = NAME_##__LINE__; \
-  NAME.beg = &(byte *) {        \
-    *(NAME_##__LINE__).beg      \
-  }
+#define PushArena(NAME)                              \
+  Arena CONCAT(NAME,__LINE__) = NAME;                \
+  Arena NAME = CONCAT(NAME,__LINE__);                \
+  NAME.beg = &(byte *){ *CONCAT(NAME,__LINE__).beg }
 #define PopArena(NAME) LogArena(NAME)
 
 #ifdef LOGGING
