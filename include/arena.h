@@ -239,6 +239,7 @@ static inline astr astrclone(Arena *arena, astr s) {
 }
 
 static inline astr astrconcat(Arena *arena, astr head, astr tail) {
+  astr ret = head;
   // Ignore empty head
   if (head.len == 0) {
     // If tail is at arena tip, return it directly; otherwise duplicate
@@ -246,21 +247,27 @@ static inline astr astrconcat(Arena *arena, astr head, astr tail) {
   }
   // If head isn't at arena tip, duplicate it
   if (head.data + head.len != (char *)*arena->beg) {
-    head = astrclone(arena, head);
+    ret = astrclone(arena, head);
   }
   // Now head is guaranteed to be at arena tip, duplicate tail right after
-  head.len += astrclone(arena, tail).len;
-  return head;
+  ret.len += astrclone(arena, tail).len;
+  return ret;
 }
 
-static inline astr astrcopy(Arena *arena, const char *bytes, size_t nbytes) {
-  void *data = New(arena, char, nbytes);
-  memcpy(data, bytes, nbytes);
-  return (astr){data, nbytes};
+static inline astr astrcopy(Arena *arena, const void *bytes, size_t nbytes) {
+  return astrclone(arena, (astr){(char *)bytes, nbytes});
 }
 
-static inline astr astrappend(Arena *arena, astr head, const char *bytes, size_t nbytes) {
+static inline astr astrappend(Arena *arena, astr head, const void *bytes, size_t nbytes) {
   return astrconcat(arena, head, (astr){(char *)bytes, nbytes});
+}
+
+static inline astr astrcpy(Arena *arena, const char * str) {
+  return astrcopy(arena, str, strlen(str));
+}
+
+static inline astr astrcat(Arena *arena, astr head, const char * str) {
+  return astrappend(arena, head, str, strlen(str));
 }
 
 static inline astr astrfmt(Arena *arena, const char *format, ...) {
