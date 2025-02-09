@@ -8,7 +8,7 @@ define __linux__
 #define UPRINTF_IMPLEMENTATION
 #include "uprintf.h"
 #else
-#define uprintf(fmt, ...) (void)0;
+#define uprintf(fmt, ...) ((void)0)
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)

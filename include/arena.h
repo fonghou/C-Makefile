@@ -3,8 +3,8 @@
 
 /** Credit:
     https://nullprogram.com/blog/2023/09/27/
-    https://lists.sr.ht/~skeeto/public-inbox/%3C20231015233305.sssrgorhqu2qo5jr%40nullprogram.com%3E
     https://nullprogram.com/blog/2023/10/05/
+    https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/c11-generic/#inline
 */
 
 #include <memory.h>
@@ -35,7 +35,7 @@ static void autofree_impl(void *p) {
 #endif
 
 #if defined(__GNUC__) && !defined(__APPLE__)
-#undef  setjmp
+#undef setjmp
 #define setjmp  __builtin_setjmp
 #define longjmp __builtin_longjmp
 #define _JBLEN  5
@@ -53,10 +53,10 @@ struct Arena {
   void **jmpbuf;
 };
 
-enum {
-  OOMNULL = 1 << 0,
+typedef enum {
+  NULLOOM = 1 << 0,
   NOINIT = 1 << 1,
-};
+} ArenaFlags;
 
 /** Usage:
 
@@ -85,31 +85,30 @@ enum {
 
 */
 
-
 #define New(...)                       ARENA_NEWX(__VA_ARGS__, ARENA_NEW4, ARENA_NEW3, ARENA_NEW2)(__VA_ARGS__)
 #define ARENA_NEWX(a, b, c, d, e, ...) e
 #define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, 0)
 #define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
-#define ARENA_NEW4(a, t, n, z)         (t *)_Generic((z), \
-  t *:     arena_alloc_init,                              \
-  default: arena_alloc)(a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, default: z))
+#define ARENA_NEW4(a, t, n, z)                                     \
+  (t *)_Generic((z), t *: arena_alloc_init, default: arena_alloc)( \
+      a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, default: z))
 
 #define ArenaOOM(A)                                \
   ({                                               \
     Arena *a_ = (A);                               \
-    a_->jmpbuf = New(a_, void *, _JBLEN, OOMNULL); \
+    a_->jmpbuf = New(a_, void *, _JBLEN, NULLOOM); \
     !a_->jmpbuf || setjmp((void *)a_->jmpbuf);     \
   })
 
-#define CONCAT0(A,B) A##B
-#define CONCAT(A,B)  CONCAT0(A,B)
+#define CONCAT0(A, B) A##B
+#define CONCAT(A, B)  CONCAT0(A, B)
 
 // PushArena leverages compound literal lifetime
 // and variable shadowing in nested block scope
-#define PushArena(NAME)                               \
-  Arena CONCAT(NAME,__LINE__) = NAME;                 \
-  Arena NAME = CONCAT(NAME,__LINE__);                 \
-  NAME.beg = &(byte *){ *CONCAT(NAME,__LINE__).beg }; \
+#define PushArena(NAME)                              \
+  Arena CONCAT(NAME, __LINE__) = NAME;               \
+  Arena NAME = CONCAT(NAME, __LINE__);               \
+  NAME.beg = &(byte *){*CONCAT(NAME, __LINE__).beg}; \
   LogArena(NAME)
 #define PopArena(NAME) LogArena(NAME)
 
@@ -130,7 +129,7 @@ static inline Arena NewArena(byte **mem, isize size) {
 }
 
 static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count,
-                                int flags) {
+                                ArenaFlags flags) {
   assert(arena);
 
   byte *current = *arena->beg;
@@ -146,7 +145,7 @@ static inline void *arena_alloc(Arena *arena, isize size, isize align, isize cou
   return flags & NOINIT ? ret : memset(ret, 0, total_size);
 
 handle_oom:
-  if (flags & OOMNULL || !arena->jmpbuf)
+  if (flags & NULLOOM || !arena->jmpbuf)
     return NULL;
 #ifndef OOM
   longjmp((void *)arena->jmpbuf, 1);
@@ -159,7 +158,7 @@ handle_oom:
 static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
                                      const void *const initptr) {
   assert(initptr);
-  void* ptr = arena_alloc(arena, size, align, count, NOINIT);
+  void *ptr = arena_alloc(arena, size, align, count, NOINIT);
   return memmove(ptr, initptr, size * count);
 }
 
@@ -249,11 +248,11 @@ static inline astr astrappend(Arena *arena, astr head, const void *bytes, size_t
   return astrconcat(arena, head, (astr){(char *)bytes, nbytes});
 }
 
-static inline astr astrcpy(Arena *arena, const char * str) {
+static inline astr astrcpy(Arena *arena, const char *str) {
   return astrcopy(arena, str, strlen(str));
 }
 
-static inline astr astrcat(Arena *arena, astr head, const char * str) {
+static inline astr astrcat(Arena *arena, astr head, const char *str) {
   return astrappend(arena, head, str, strlen(str));
 }
 

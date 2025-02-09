@@ -1,4 +1,0 @@
-[submodule "STC"]
-	path = STC
-	url = https://github.com/stclib/STC.git
-	branch = master
