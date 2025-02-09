@@ -1,21 +1,59 @@
-EXE = main
+######################### Preamble ###########################################
+SHELL := bash
+.ONESHELL:
+.SHELLFLAGS := -eu -o pipefail -c
+.DELETE_ON_ERROR:
+.SECONDEXPANSION:
+MAKEFLAGS += --warn-undefined-variables
+MAKEFLAGS += --no-builtin-rules
+
+######################### Project Settings ###################################
+.PHONY: all
+all: debug
+
+NAME = app
 BUILD_DIR := ./build
-TARGET= $(BUILD_DIR)/$(EXE)
+BIN_TARGET= $(BUILD_DIR)/$(NAME)
+LIB_TARGET= $(BUILD_DIR)/lib$(NAME).so
 
 SRC :=$(shell find . -name '*.c')
+LIB_SRC :=$(shell find . -name '*.c' -not -name $(NAME).c)
 OBJ :=$(SRC:%.c=$(BUILD_DIR)/%.o)
+LIB_OBJ :=$(LIB_SRC:%.c=$(BUILD_DIR)/%.o)
 DEP :=$(OBJS:.o=.d)
 LIB :=$(addprefix -l,m)
 
-WARN = -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations
+WARN = -std=c17 -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations
 SANZ += -fno-omit-frame-pointer -fno-common -fsanitize-trap=unreachable -fsanitize=undefined,address
 
 CPPFLAGS += -I./include
 CFLAGS   += -MMD -MP $(WARN)
 LDFLAGS  += $(LIB)
 
-.PHONY: all
-all: debug
+.PHONY: debug release
+debug: CFLAGS += $(SANZ) -O0 -ggdb -DLOGGING -DOOM
+debug: LDFLAGS += $(SANZ)
+debug: $(BIN_TARGET) $(LIB_TARGET)
+
+release: CFLAGS  += -O3 -g -DNDEBUG
+release: LDFLAGS +=
+release: $(BIN_TARGET)
+
+$(BIN_TARGET): $(OBJ)
+	$(CC) -o $@ $(LDFLAGS) $^
+
+$(LIB_TARGET): $(LIB_OBJ)
+	$(CC) -o $@ -shared -fPIC $(LDFLAGS) $^
+
+$(BUILD_DIR)/%.o : %.c
+	mkdir -p $(dir $@)
+	$(CC) -o $@ $(CPPFLAGS) $(CFLAGS) -c $<
+
+-include $(DEPS)
+
+.PHONY: clean
+clean:
+	rm -rf $(BUILD_DIR)
 
 .PHONY: deps
 deps:
@@ -26,25 +64,3 @@ deps:
 .PHONY: watch
 watch:
 	find . -name '*.c' -o -name '*.h' | entr -cc clang $(CPPFLAGS) $(WARN) -fsyntax-only -ferror-limit=1 -fmacro-backtrace-limit=1 /_
-
-.PHONY: debug release
-debug: CFLAGS += $(SANZ) -O0 -g3 -DLOGGING -DOOM
-debug: LDFLAGS += $(SANZ)
-debug: $(TARGET)
-
-release: CFLAGS  += -O3 -g -DNDEBUG
-release: LDFLAGS += #-static-libgcc
-release: $(TARGET)
-
-.PHONY: clean
-clean:
-	rm -rf $(BUILD_DIR)
-
-$(TARGET): $(OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS)
-
-$(BUILD_DIR)/%.o : %.c
-	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
-
--include $(DEPS)
