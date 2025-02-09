@@ -100,15 +100,16 @@ typedef enum {
     !a_->jmpbuf || setjmp((void *)a_->jmpbuf);     \
   })
 
-#define CONCAT0(A, B) A##B
-#define CONCAT(A, B)  CONCAT0(A, B)
+#define CONCAT0(a, b)   a##b
+#define CONCAT(a, b)    CONCAT0(a, b)
+#define ARENA_VAR(name) CONCAT(CONCAT(__ARENA_, name), __LINE__)
 
 // PushArena leverages compound literal lifetime
 // and variable shadowing in nested block scope
-#define PushArena(NAME)                              \
-  Arena CONCAT(NAME, __LINE__) = NAME;               \
-  Arena NAME = CONCAT(NAME, __LINE__);               \
-  NAME.beg = &(byte *){*CONCAT(NAME, __LINE__).beg}; \
+#define PushArena(NAME)                       \
+  Arena ARENA_VAR(NAME) = NAME;               \
+  Arena NAME = ARENA_VAR(NAME);               \
+  NAME.beg = &(byte *){*ARENA_VAR(NAME).beg}; \
   LogArena(NAME)
 #define PopArena(NAME) LogArena(NAME)
 
