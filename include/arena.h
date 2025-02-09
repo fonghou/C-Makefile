@@ -106,10 +106,11 @@ enum {
 
 // PushArena leverages compound literal lifetime
 // and variable shadowing in nested block scope
-#define PushArena(NAME)                              \
-  Arena CONCAT(NAME,__LINE__) = NAME;                \
-  Arena NAME = CONCAT(NAME,__LINE__);                \
-  NAME.beg = &(byte *){ *CONCAT(NAME,__LINE__).beg }
+#define PushArena(NAME)                               \
+  Arena CONCAT(NAME,__LINE__) = NAME;                 \
+  Arena NAME = CONCAT(NAME,__LINE__);                 \
+  NAME.beg = &(byte *){ *CONCAT(NAME,__LINE__).beg }; \
+  LogArena(NAME)
 #define PopArena(NAME) LogArena(NAME)
 
 #ifdef LOGGING
