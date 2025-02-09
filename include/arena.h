@@ -61,8 +61,8 @@ typedef enum {
 /** Usage:
 
   enum { ARENA_SIZE = 1 << 20 };
-  autofree void *mem = malloc(ARENA_SIZE);
-  Arena arena = NewArena(&(byte *){mem}, ARENA_SIZE);
+  void *mem = malloc(ARENA_SIZE);
+  Arena arena = NewArena(&mem, ARENA_SIZE);
 
   if (ArenaOOM(&arena)) {
     abort();
