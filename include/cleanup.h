@@ -2,6 +2,18 @@
 #ifndef _LINUX_CLEANUP_H
 #define _LINUX_CLEANUP_H
 
+// #include <linux/compiler.h>
+#define __cleanup(func) __attribute__((__cleanup__(func)))
+#define __must_check    __attribute__((__warn_unused_result__))
+#define __maybe_unused  __attribute__((__unused__))
+
+#define typeof_member (T, m) __typeof__(((T *)0)->m)
+
+#define ___PASTE(a, b) a##b
+#define __PASTE(a, b)  ___PASTE(a, b)
+
+#define __UNIQUE_ID(prefix) __PASTE(__PASTE(__UNIQUE_ID_, prefix), __COUNTER__)
+
 /**
  * DOC: scope-based cleanup helpers
  *
@@ -192,17 +204,6 @@
  * Without the NULL test it turns into a mess and the compiler can't help us.
  */
 
-#define __cleanup(func)   __attribute__((__cleanup__(func)))
-#define __must_check      __attribute__((__warn_unused_result__))
-#define __maybe_unused    __attribute__((__unused__))
-
-#define typeof_member     (T, m)	__typeof__(((T*)0)->m)
-
-#define ___PASTE(a, b)  a##b
-#define __PASTE(a, b)   ___PASTE(a, b)
-
-#define __UNIQUE_ID(prefix) __PASTE(__PASTE(__UNIQUE_ID_, prefix), __COUNTER__)
-
 #define DEFINE_FREE(_name, _type, _free)       \
   static inline void __free_##_name(void *p) { \
     _type _T = *(_type *)p;                    \
@@ -219,7 +220,7 @@
     __val;                           \
   })
 
-static inline __must_check 
+static inline __must_check
 const volatile void *__must_check_fn(const volatile void *val) {
   return val;
 }

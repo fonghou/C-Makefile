@@ -30,7 +30,7 @@ static void autofree_impl(void *p) {
 }
 #define autofree __attribute__((__cleanup__(autofree_impl)))
 #else
-#warning "autofree is not supported"
+#error "autofree is not supported"
 #define autofree
 #endif
 
@@ -48,40 +48,49 @@ typedef uint8_t byte;
 
 typedef struct Arena Arena;
 struct Arena {
-  byte **beg;
+  byte *beg;
   byte *end;
   void **jmpbuf;
 };
 
 typedef enum {
-  NULLOOM = 1 << 0,
-  NOINIT = 1 << 1,
+  NO_INIT  = 1 << 0,
+  OOM_NULL = 1 << 1,
+  PUSH_END = 1 << 2
 } ArenaFlags;
 
 /** Usage:
 
   enum { ARENA_SIZE = 1 << 20 };
   void *mem = malloc(ARENA_SIZE);
-  Arena arena = NewArena(&mem, ARENA_SIZE);
+  Arena arena = NewArena(mem, ARENA_SIZE);
 
   if (ArenaOOM(&arena)) {
     abort();
   }
 
-  { // shadowed/nested arena within block scope
-    PushArena(arena);
+  {
+    Shadow(arena);
 
-    This *x = New(&arena, This);
-    This *y = foo(arena);
+    Ty *x = New(arena, Ty);
 
-    // x, y should not assign to any variable outside of this block
+    // x pointer cannot escape this block
 
-    ...
-
-    // PopArena(arena); // implicitly
   }
 
-  That z[] = New(&arena, That, 10);
+  Ty a[] = New(&arena, Ty, 10);
+  {
+    Arena tmp[] = {PushArena(arena)};
+
+    for (int i = 0; i < 10; ++i) {
+      Ty *x = foo(tmp);
+      // must move x *value* into a[i]
+      a[i] = *x;
+    }
+
+    PopArena(arena, tmp);
+  }
+
 
 */
 
@@ -93,47 +102,43 @@ typedef enum {
   (t *)_Generic((z), t *: arena_alloc_init, default: arena_alloc)( \
       a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, default: z))
 
-#define ArenaOOM(A)                                \
-  ({                                               \
-    Arena *a_ = (A);                               \
-    a_->jmpbuf = New(a_, void *, _JBLEN, NULLOOM); \
-    !a_->jmpbuf || setjmp((void *)a_->jmpbuf);     \
+#define ArenaOOM(A)                                 \
+  ({                                                \
+    Arena *a_ = (A);                                \
+    a_->jmpbuf = New(a_, void *, _JBLEN, OOM_NULL); \
+    !a_->jmpbuf || setjmp((void *)a_->jmpbuf);      \
   })
 
-#define CONCAT0(a, b)   a##b
-#define CONCAT(a, b)    CONCAT0(a, b)
-#define ARENA_VAR(name) CONCAT(CONCAT(__ARENA_, name), __LINE__)
+#define CONCAT0(a, b) a##b
+#define CONCAT(a, b)  CONCAT0(a, b)
 
-// PushArena leverages compound literal lifetime
-// and variable shadowing in nested block scope
-#define PushArena(NAME)                       \
-  Arena ARENA_VAR(NAME) = NAME;               \
-  Arena NAME = ARENA_VAR(NAME);               \
-  NAME.beg = &(byte *){*ARENA_VAR(NAME).beg}; \
-  LogArena(NAME)
-#define PopArena(NAME) LogArena(NAME)
+#define ARENA_PTR   CONCAT(_arena_, __LINE__)
+#define Shadow(arena)           \
+  Arena *ARENA_PTR = arena;     \
+  Arena arena[] = {*ARENA_PTR}; \
+  LogArena(*arena)
 
 #ifdef LOGGING
-#define LogArena(A)                                                                           \
-  fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld->%ld end=%ld diff=%ld\n", __FILE__, __LINE__, \
-          (uintptr_t)((A).beg), (uintptr_t)(*(A).beg), (uintptr_t)(A).end,                    \
-          (isize)((A).end - (*(A).beg)))
+#define LogArena(A)                                                                      \
+  fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld end=%ld diff=%ld\n", __FILE__, __LINE__, \
+          (uintptr_t)((A).beg), (uintptr_t)((A).end), (isize)((A).end - ((A).beg)))
 #else
 #define LogArena(A) ((void)A)
 #endif
 
-static inline Arena NewArena(byte **mem, isize size) {
+static inline Arena NewArena(byte *mem, isize size) {
   Arena a = {0};
   a.beg = mem;
-  a.end = *mem ? *mem + size : 0;
+  a.end = mem ? mem + size : 0;
   return a;
 }
 
 static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count,
                                 ArenaFlags flags) {
-  assert(arena);
+  assert(arena != NULL && "arena cannot be NULL");
+  assert(count >= 0 && "count must be positive");
 
-  byte *current = *arena->beg;
+  byte *current = arena->beg;
   isize avail = arena->end - current;
   isize padding = -(uintptr_t)current & (align - 1);
   if (count > (avail - padding) / size) {
@@ -141,26 +146,42 @@ static inline void *arena_alloc(Arena *arena, isize size, isize align, isize cou
   }
 
   isize total_size = size * count;
-  *arena->beg += padding + total_size;
-  byte *ret = current + padding;
-  return flags & NOINIT ? ret : memset(ret, 0, total_size);
+  if (flags & PUSH_END) {
+    arena->end -= total_size;
+    current = arena->end;
+  } else {
+    arena->beg += padding + total_size;
+    current += padding;
+  }
+  return flags & NO_INIT ? current : memset(current, 0, total_size);
 
 handle_oom:
-  if (flags & NULLOOM || !arena->jmpbuf)
+  if (flags & OOM_NULL || !arena->jmpbuf)
     return NULL;
-#ifndef OOM
+#ifndef OOM_DIE
   longjmp((void *)arena->jmpbuf, 1);
 #else
-  assert(!OOM);
+  assert(!OOM_DIE);
   abort();
 #endif
 }
 
 static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
                                      const void *const initptr) {
-  assert(initptr);
-  void *ptr = arena_alloc(arena, size, align, count, NOINIT);
+  assert(initptr != NULL && "initptr cannot be NULL");
+  void *ptr = arena_alloc(arena, size, align, count, NO_INIT);
   return memmove(ptr, initptr, size * count);
+}
+
+static inline Arena PushArena(Arena *arena) {
+  Arena tail = *arena;
+  tail.beg = New(arena, byte, (arena->end - arena->beg) / 2, NO_INIT | PUSH_END);
+  return tail;
+}
+
+static inline void PopArena(Arena *head, Arena *tail) {
+  assert(head->end <= tail->beg && "Invalid arena chain");
+  head->end = tail->end;
 }
 
 #define Push(S, A)                                                             \
@@ -185,7 +206,7 @@ static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
   if (!replica.cap) {
     replica.cap = grow;
     replica.data = arena_alloc(a, size, align, replica.cap, 0);
-  } else if ((uintptr_t)replica.data == (uintptr_t)*a->beg - size * replica.cap) {
+  } else if ((uintptr_t)replica.data == (uintptr_t)a->beg - size * replica.cap) {
     // grow inplace
     arena_alloc(a, size, 1, grow, 0);
     replica.cap += grow;
@@ -210,16 +231,16 @@ typedef struct astr {
 // string literal only!
 #define astr(s) (astr){s, sizeof(s) - 1}
 
-// printf("%.*s", astr(s))
+// printf("%.*s", S(s))
 #define S(s) (int)(s).len, (s).data
 
 static inline astr astrclone(Arena *arena, astr s) {
   astr s2 = s;
   // Early return if string is empty or already at arena boundary
-  if (!s.len || s.data + s.len == (char *)*arena->beg)
+  if (!s.len || s.data + s.len == (char *)arena->beg)
     return s2;
 
-  s2.data = New(arena, char, s.len, NOINIT);
+  s2.data = New(arena, char, s.len, NO_INIT);
   if (s2.data >= s.data + s.len || s2.data + s2.len <= s.data) {
     memcpy(s2.data, s.data, s.len);
   } else {
@@ -233,10 +254,10 @@ static inline astr astrconcat(Arena *arena, astr head, astr tail) {
   // Ignore empty head
   if (head.len == 0) {
     // If tail is at arena tip, return it directly; otherwise duplicate
-    return tail.len && tail.data + tail.len == (char *)*arena->beg ? tail : astrclone(arena, tail);
+    return tail.len && tail.data + tail.len == (char *)arena->beg ? tail : astrclone(arena, tail);
   }
   // If head isn't at arena tip, duplicate it
-  if (head.data + head.len != (char *)*arena->beg) {
+  if (head.data + head.len != (char *)arena->beg) {
     ret = astrclone(arena, head);
   }
   // Now head is guaranteed to be at arena tip, duplicate tail right after
@@ -266,12 +287,12 @@ static inline astr astrfmt(Arena *arena, const char *format, ...) {
   int nbytes = vsnprintf(NULL, 0, format, args);
   va_end(args);
   assert(nbytes >= 0);
-  void *data = New(arena, char, nbytes + 1, NOINIT);
+  void *data = New(arena, char, nbytes + 1, NO_INIT);
   va_start(args, format);
   int nbytes2 = vsnprintf(data, nbytes + 1, format, args);
   va_end(args);
   assert(nbytes2 == nbytes);
-  arena->beg[0]--;
+  arena->beg--;
   return (astr){.data = data, .len = nbytes};
 }
 
