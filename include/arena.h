@@ -211,7 +211,7 @@ typedef struct astr {
 #define astr(s) (astr){s, sizeof(s) - 1}
 
 // printf("%.*s", astr(s))
-#define S(s) (int)s.len, s.data
+#define S(s) (int)(s).len, (s).data
 
 static inline astr astrclone(Arena *arena, astr s) {
   astr s2 = s;
