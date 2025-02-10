@@ -20,14 +20,14 @@ SRC :=$(shell find . -name '*.c')
 LIB_SRC :=$(shell find . -name '*.c' -not -name $(NAME).c)
 OBJ :=$(SRC:%.c=$(BUILD_DIR)/%.o)
 LIB_OBJ :=$(LIB_SRC:%.c=$(BUILD_DIR)/%.o)
-DEP :=$(OBJS:.o=.d)
+DEP :=$(OBJ:.o=.d)
 LIB :=$(addprefix -l,m)
 
-WARN = -std=c17 -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations
+WARN = -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations
 SANZ += -fno-omit-frame-pointer -fno-common -fsanitize-trap=unreachable -fsanitize=undefined,address
 
 CPPFLAGS += -I./include
-CFLAGS   += -MMD -MP $(WARN)
+CFLAGS   += -MMD -MP -fPIC $(WARN)
 LDFLAGS  += $(LIB)
 
 .PHONY: debug release
@@ -43,13 +43,13 @@ $(BIN_TARGET): $(OBJ)
 	$(CC) -o $@ $(LDFLAGS) $^
 
 $(LIB_TARGET): $(LIB_OBJ)
-	$(CC) -o $@ -shared -fPIC $(LDFLAGS) $^
+	$(CC) -o $@ -shared $(LDFLAGS) $^
 
 $(BUILD_DIR)/%.o : %.c
 	mkdir -p $(dir $@)
 	$(CC) -o $@ $(CPPFLAGS) $(CFLAGS) -c $<
 
--include $(DEPS)
+-include $(DEP)
 
 .PHONY: clean
 clean:
