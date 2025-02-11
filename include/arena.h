@@ -218,7 +218,8 @@ static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
     void *dest = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
     void *src = slicemeta.data;
     isize len = size * slicemeta.len;
-    memcpy(dest, src, len);
+    // allow slice to be moved between overlapping arenas
+    memmove(dest, src, len);
     slicemeta.data = dest;
   }
 
