@@ -1,4 +1,4 @@
-/*----------------------------------------- CC: CONVENIENT CONTAINERS v1.3.1 -------------------------------------------
+/*----------------------------------------- CC: CONVENIENT CONTAINERS v1.3.2 -------------------------------------------
 
 This library provides usability-oriented generic containers (vectors, linked lists, unordered maps, unordered sets,
 ordered maps, and ordered sets).
@@ -766,11 +766,12 @@ API:
       top of your files.
     * In-built comparison and hash functions are already defined for the following types: char, unsigned char, signed
       char, unsigned short, short, unsigned int, int, unsigned long, long, unsigned long long, long long, size_t, and
-      null-terminated strings (char * and const char *). Defining a comparison or hash function for one of these types
-      will overwrite the in-built function.
+      char * (a NULL-terminated string). Defining a comparison or hash function for one of these types will overwrite
+      the in-built function.
 
 Version history:
 
+  11/02/2025 1.3.2: Fixed a critical bug causing maps to call the wrong destructors during cleanup.
   23/08/2024 1.3.1: Fixed missing static inline qualifier on an internal omap function.
   29/07/2024 1.3.0: Added ordered map and ordered set.
                     Fixed cc_erase_itr to return a correctly typed pointer-iterator instead of void *. 
@@ -805,7 +806,7 @@ Version history:
 
 License (MIT):
 
-  Copyright (c) 2022-2024 Jackson L. Allan
+  Copyright (c) 2022-2025 Jackson L. Allan
 
   Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
   documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
@@ -1204,7 +1205,6 @@ CC_TYPEOF_XP(                                                                   
       CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), long long ):          ( long long ){ 0 },          \
       CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), cc_maybe_size_t ):    ( size_t ){ 0 },             \
       CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), char * ):             ( char * ){ 0 },             \
-      CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), const char * ):       ( const char * ){ 0 },       \
       CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), void * ):             ( void * ){ 0 },             \
       default: (char){ 0 } /* Nothing. */                                                         \
     )                                                                                             \
@@ -1383,21 +1383,21 @@ static inline bool cc_is_little_endian( void )
 
 #if defined( __GNUC__ ) && ULLONG_MAX == 0xFFFFFFFFFFFFFFFF
 
-static inline unsigned int cc_first_nonzero_uint16( uint64_t a )
+static inline int cc_first_nonzero_uint16( uint64_t a )
 {
   if( cc_is_little_endian() )
-    return (unsigned int)__builtin_ctzll( a ) / 16;
+    return __builtin_ctzll( a ) / 16;
   
-  return (unsigned int)__builtin_clzll( a ) / 16;
+  return __builtin_clzll( a ) / 16;
 }
 
 // DEPRECATED.
-static inline unsigned int cc_last_nonzero_uint16( uint64_t a )
+static inline int cc_last_nonzero_uint16( uint64_t a )
 {
   if( cc_is_little_endian() )
-    return (unsigned int)__builtin_clzll( a ) / 16;
+    return __builtin_clzll( a ) / 16;
   
-  return (unsigned int)__builtin_ctzll( a ) / 16;
+  return __builtin_ctzll( a ) / 16;
 }
 
 #elif defined( _MSC_VER ) && ( defined( _M_X64 ) || defined( _M_ARM64 ) )
@@ -1406,7 +1406,7 @@ static inline unsigned int cc_last_nonzero_uint16( uint64_t a )
 #pragma intrinsic(_BitScanForward64)
 #pragma intrinsic(_BitScanReverse64)
 
-static inline unsigned int cc_first_nonzero_uint16( uint64_t a )
+static inline int cc_first_nonzero_uint16( uint64_t a )
 {
   unsigned long result;
 
@@ -1422,7 +1422,7 @@ static inline unsigned int cc_first_nonzero_uint16( uint64_t a )
 }
 
 // DEPRECATED.
-static inline unsigned int cc_last_nonzero_uint16( uint64_t a )
+static inline int cc_last_nonzero_uint16( uint64_t a )
 {
   unsigned long result;
 
@@ -1439,9 +1439,9 @@ static inline unsigned int cc_last_nonzero_uint16( uint64_t a )
 
 #else
 
-static inline unsigned int cc_first_nonzero_uint16( uint64_t a )
+static inline int cc_first_nonzero_uint16( uint64_t a )
 {
-  unsigned int result = 0;
+  int result = 0;
 
   uint32_t half;
   memcpy( &half, &a, sizeof( uint32_t ) );
@@ -1457,9 +1457,9 @@ static inline unsigned int cc_first_nonzero_uint16( uint64_t a )
 }
 
 // DEPRECATED.
-static inline unsigned int cc_last_nonzero_uint16( uint64_t a )
+static inline int cc_last_nonzero_uint16( uint64_t a )
 {
-  unsigned int result = 3;
+  int result = 3;
 
   uint32_t half;
   memcpy( &half, (char *)&a + sizeof( uint32_t ), sizeof( uint32_t ) );
@@ -2468,7 +2468,7 @@ static inline void *cc_map_key_for(
 
 static inline size_t cc_map_bucket_index_from_itr( void *cntr, void *itr, size_t el_size, uint64_t layout )
 {
-  return (size_t)( (char *)itr - (char *)cc_map_el( cntr, 0, el_size, layout ) ) / CC_BUCKET_SIZE( el_size, layout );
+  return ( (char *)itr - (char *)cc_map_el( cntr, 0, el_size, layout ) ) / CC_BUCKET_SIZE( el_size, layout );
 }
 
 static inline size_t cc_map_min_cap_for_n_els(
@@ -2481,7 +2481,7 @@ static inline size_t cc_map_min_cap_for_n_els(
 
   // Round up to a power of two.
   size_t cap = CC_MAP_MIN_NONZERO_BUCKET_COUNT;
-  while( n > (size_t)( (double)cap * max_load ) )
+  while( n > cap * max_load )
     cap *= 2;
 
   return cap;
@@ -2592,7 +2592,7 @@ static inline bool cc_map_evict(
   }
 
   // Disconnect the key-element pair from chain.
-  cc_map_hdr( cntr )->metadata[ prev ] = (uint16_t)( cc_map_hdr( cntr )->metadata[ prev ] & ~CC_MAP_DISPLACEMENT_MASK ) |
+  cc_map_hdr( cntr )->metadata[ prev ] = ( cc_map_hdr( cntr )->metadata[ prev ] & ~CC_MAP_DISPLACEMENT_MASK ) |
     ( cc_map_hdr( cntr )->metadata[ bucket ] & CC_MAP_DISPLACEMENT_MASK );
 
   // Find the empty bucket to which to move the key-element pair.
@@ -2614,9 +2614,8 @@ static inline bool cc_map_evict(
   // Re-link the key-element pair to the chain from its new bucket.
   cc_map_hdr( cntr )->metadata[ empty ] = ( cc_map_hdr( cntr )->metadata[ bucket ] & CC_MAP_HASH_FRAG_MASK ) |
     ( cc_map_hdr( cntr )->metadata[ prev ] & CC_MAP_DISPLACEMENT_MASK );
-  cc_map_hdr( cntr )->metadata[ prev ] = (uint16_t)(
-    ( cc_map_hdr( cntr )->metadata[ prev ] & ~CC_MAP_DISPLACEMENT_MASK ) | displacement
-  );
+  cc_map_hdr( cntr )->metadata[ prev ] = ( cc_map_hdr( cntr )->metadata[ prev ] & ~CC_MAP_DISPLACEMENT_MASK ) |
+    displacement;
 
   return true;
 }
@@ -2658,7 +2657,7 @@ static inline void *cc_map_insert_raw(
   if( !( cc_map_hdr( cntr )->metadata[ home_bucket ] & CC_MAP_IN_HOME_BUCKET_MASK ) )
   {
     // Load-factor check.
-    if( CC_UNLIKELY( cc_map_hdr( cntr )->size + 1 > (size_t)( max_load * (double)cc_map_cap( cntr ) ) ) )
+    if( CC_UNLIKELY( cc_map_hdr( cntr )->size + 1 > max_load * cc_map_cap( cntr ) ) )
       return NULL;
 
     // Vacate the home bucket if it contains a key-element pair.
@@ -2711,7 +2710,7 @@ static inline void *cc_map_insert_raw(
   }
 
   // Load-factor check.
-  if( CC_UNLIKELY( cc_map_hdr( cntr )->size + 1 > (size_t)( max_load * (double)cc_map_cap( cntr ) ) ) )
+  if( CC_UNLIKELY( cc_map_hdr( cntr )->size + 1 > max_load * cc_map_cap( cntr ) ) )
     return NULL;
 
   // Find the earliest empty bucket, per quadratic probing.
@@ -2729,9 +2728,8 @@ static inline void *cc_map_insert_raw(
 
   cc_map_hdr( cntr )->metadata[ empty ] = hashfrag | ( cc_map_hdr( cntr )->metadata[ prev ] & CC_MAP_DISPLACEMENT_MASK
     );
-  cc_map_hdr( cntr )->metadata[ prev ] = (uint16_t)(
-     ( cc_map_hdr( cntr )->metadata[ prev ] & ~CC_MAP_DISPLACEMENT_MASK ) | displacement
-  );
+  cc_map_hdr( cntr )->metadata[ prev ] = ( cc_map_hdr( cntr )->metadata[ prev ] & ~CC_MAP_DISPLACEMENT_MASK ) |
+    displacement;
 
   ++cc_map_hdr( cntr )->size;
 
@@ -2787,9 +2785,8 @@ static inline void *cc_map_reinsert(
 
   cc_map_hdr( cntr )->metadata[ empty ] = hashfrag | ( cc_map_hdr( cntr )->metadata[ prev ] & CC_MAP_DISPLACEMENT_MASK
     );
-  cc_map_hdr( cntr )->metadata[ prev ] = (uint16_t)(
-    ( cc_map_hdr( cntr )->metadata[ prev ] & ~CC_MAP_DISPLACEMENT_MASK ) | displacement
-  );
+  cc_map_hdr( cntr )->metadata[ prev ] = ( cc_map_hdr( cntr )->metadata[ prev ] & ~CC_MAP_DISPLACEMENT_MASK ) |
+    displacement;
 
   ++cc_map_hdr( cntr )->size;
 
@@ -3210,10 +3207,8 @@ static inline bool cc_map_erase_raw(
         CC_BUCKET_SIZE( el_size, layout )
       );
 
-      cc_map_hdr( cntr )->metadata[ erase_bucket ] = (uint16_t)(
-        ( cc_map_hdr( cntr )->metadata[ erase_bucket ] & ~CC_MAP_HASH_FRAG_MASK ) |
-        ( cc_map_hdr( cntr )->metadata[ bucket ] & CC_MAP_HASH_FRAG_MASK )
-      );
+      cc_map_hdr( cntr )->metadata[ erase_bucket ] = ( cc_map_hdr( cntr )->metadata[ erase_bucket ] &
+        ~CC_MAP_HASH_FRAG_MASK ) | ( cc_map_hdr( cntr )->metadata[ bucket ] & CC_MAP_HASH_FRAG_MASK );
 
       cc_map_hdr( cntr )->metadata[ prev ] |= CC_MAP_DISPLACEMENT_MASK;
       cc_map_hdr( cntr )->metadata[ bucket ] = CC_MAP_EMPTY;
@@ -3411,7 +3406,7 @@ static inline void cc_map_cleanup(
   cc_free_fnptr_ty free_
 )
 {
-  cc_map_clear( cntr, el_size, layout, key_dtor, el_dtor, NULL /* Dummy */ );
+  cc_map_clear( cntr, el_size, layout, el_dtor, key_dtor, NULL /* Dummy */ );
 
   if( !cc_map_is_placeholder( cntr ) )
     free_( cntr );
@@ -5613,8 +5608,6 @@ std::is_same<CC_TYPEOF_XP(**arg), CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( arg ), cc_cmp
     cc_cmpr_size_t_select                                                                                  : \
   std::is_same<CC_TYPEOF_XP(**cntr), CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), char * )>::value             ? \
     cc_cmpr_c_string_select                                                                                : \
-  std::is_same<CC_TYPEOF_XP(**cntr), CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), const char * )>::value       ? \
-    cc_cmpr_c_string_select                                                                                : \
   cc_cmpr_dummy_select                                                                                       \
 )( CC_CNTR_ID( cntr ) )                                                                                      \
 
@@ -5653,8 +5646,6 @@ std::is_same<                                                \
     cc_hash_size_t                                                                                         : \
   std::is_same<CC_TYPEOF_XP(**cntr), CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), char * )>::value             ? \
     cc_hash_c_string                                                                                       : \
-  std::is_same<CC_TYPEOF_XP(**cntr), CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), const char * )>::value       ? \
-    cc_hash_c_string                                                                                       : \
   (cc_hash_fnptr_ty)NULL                                                                                     \
 )                                                                                                            \
 
@@ -5674,7 +5665,6 @@ std::is_same<                                                \
   std::is_same<ty, signed long long>::value   ? true : \
   std::is_same<ty, size_t>::value             ? true : \
   std::is_same<ty, char *>::value             ? true : \
-  std::is_same<ty, const char *>::value       ? true : \
   CC_FOR_EACH_CMPR( CC_HAS_CMPR_SLOT, ty )             \
   false                                                \
 )                                                      \
@@ -5695,7 +5685,6 @@ std::is_same<                                                \
   std::is_same<ty, signed long long>::value   ? true : \
   std::is_same<ty, size_t>::value             ? true : \
   std::is_same<ty, char *>::value             ? true : \
-  std::is_same<ty, const char *>::value       ? true : \
   CC_FOR_EACH_HASH( CC_HAS_HASH_SLOT, ty )             \
   false                                                \
 )                                                      \
@@ -5754,7 +5743,6 @@ _Generic( (**cntr),                                                             
     CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), long long ):          cc_cmpr_long_long_select,          \
     CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), cc_maybe_size_t ):    cc_cmpr_size_t_select,             \
     CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), char * ):             cc_cmpr_c_string_select,           \
-    CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), const char * ):       cc_cmpr_c_string_select,           \
     default: cc_cmpr_dummy_select                                                                     \
   )                                                                                                   \
 )( CC_CNTR_ID( cntr ) )                                                                               \
@@ -5777,7 +5765,6 @@ _Generic( (**cntr),                                                             
     CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), long long ):          cc_hash_long_long,          \
     CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), cc_maybe_size_t ):    cc_hash_size_t,             \
     CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), char * ):             cc_hash_c_string,           \
-    CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), const char * ):       cc_hash_c_string,           \
     default: (cc_hash_fnptr_ty)NULL                                                            \
   )                                                                                            \
 )                                                                                              \
@@ -5800,7 +5787,6 @@ _Generic( (ty){ 0 },                    \
     long long:          true,           \
     cc_maybe_size_t:    true,           \
     char *:             true,           \
-    const char *:       true,           \
     default:            false           \
   )                                     \
 )                                       \
@@ -5823,7 +5809,6 @@ _Generic( (ty){ 0 },                    \
     long long:          true,           \
     cc_maybe_size_t:    true,           \
     char *:             true,           \
-    const char *:       true,           \
     default:            false           \
   )                                     \
 )                                       \
@@ -5869,8 +5854,6 @@ _Generic( (**cntr),                                                             
       ( cc_key_details_ty ){ sizeof( size_t ), alignof( size_t ) },                         \
     CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), char * ):                                      \
       ( cc_key_details_ty ){ sizeof( char * ), alignof( char * ) },                         \
-    CC_MAKE_BASE_FNPTR_TY( CC_EL_TY( cntr ), const char * ):                                \
-      ( cc_key_details_ty ){ sizeof( const char * ), alignof( const char * ) },             \
     default: ( cc_key_details_ty ){ 0 }                                                     \
   )                                                                                         \
 )                                                                                           \
