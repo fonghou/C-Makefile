@@ -198,28 +198,31 @@ static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
     void *data;
     isize len;
     isize cap;
-  } replica;
-  memcpy(&replica, slice, sizeof(replica));
+  } slicemeta;
+  memcpy(&slicemeta, slice, sizeof(slicemeta));
+  assert(slicemeta.len >= 0 && "slice.len must be non-negative");
+  assert(slicemeta.cap >= slicemeta.len && "slice.cap cannot be less than slice.len");
 
   const int grow = MAX_ALIGN;
 
-  if (!replica.cap) {
-    replica.cap = grow;
-    replica.data = arena_alloc(a, size, align, replica.cap, 0);
-  } else if ((uintptr_t)replica.data == (uintptr_t)a->beg - size * replica.cap) {
+  if (!slicemeta.cap) {
+    // first alloc
+    slicemeta.cap = grow;
+    slicemeta.data = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
+  } else if ((uintptr_t)slicemeta.data == (uintptr_t)a->beg - size * slicemeta.cap) {
     // grow inplace
-    arena_alloc(a, size, 1, grow, 0);
-    replica.cap += grow;
+    arena_alloc(a, size, 1, grow, NO_INIT);
+    slicemeta.cap += grow;
   } else {
-    replica.cap += replica.cap / 2;  // grow by 1.5
-    void *dest = arena_alloc(a, size, align, replica.cap, 0);
-    void *src = replica.data;
-    isize len = size * replica.len;
+    slicemeta.cap += slicemeta.cap / 2;  // grow by 1.5
+    void *dest = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
+    void *src = slicemeta.data;
+    isize len = size * slicemeta.len;
     memcpy(dest, src, len);
-    replica.data = dest;
+    slicemeta.data = dest;
   }
 
-  memcpy(slice, &replica, sizeof(replica));
+  memcpy(slice, &slicemeta, sizeof(slicemeta));
 }
 
 // Arena owned str (aka astr)
