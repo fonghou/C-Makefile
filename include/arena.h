@@ -99,8 +99,8 @@ typedef enum {
 #define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, 0)
 #define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
 #define ARENA_NEW4(a, t, n, z)                                     \
-  (t *)_Generic((z), t *: arena_alloc_init, default: arena_alloc)( \
-      a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, default: z))
+  (t *)_Generic((z), t *: arena_alloc_init, int: arena_alloc)( \
+      a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, int: z))
 
 #define ArenaOOM(A)                                 \
   ({                                                \
