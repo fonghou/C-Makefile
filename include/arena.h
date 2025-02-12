@@ -307,4 +307,12 @@ static inline bool astrcmp(astr a, astr b) {
   return !a.len || !memcmp(a.data, b.data, a.len);
 }
 
+static uint64_t astrhash(astr key) {
+  uint64_t hash = 0xcbf29ce484222325ull;
+  for (isize i = 0; i < key.len; i++)
+    hash = ((unsigned char)key.data[i] ^ hash) * 0x100000001b3ull;
+
+  return hash;
+}
+
 #endif  // ARENA_H
