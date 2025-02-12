@@ -441,7 +441,7 @@ License (MIT):
 #define FREE_FN     _vt_arena_free
 
 static inline void* _vt_arena_malloc(size_t size, Arena **ctx) {
-  return arena_alloc(*ctx, size, sizeof(max_align_t), 1, NO_INIT);
+  return arena_alloc(*ctx, size, sizeof(max_align_t), 1, (ArenaFlag){_OOM_NULL | _NO_INIT});
 }
 
 static inline void _vt_arena_free(void *ptr, size_t size, Arena **ctx ) { }

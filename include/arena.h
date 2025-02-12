@@ -53,11 +53,18 @@ struct Arena {
   void **jmpbuf;
 };
 
-typedef enum {
-  NO_INIT = 1 << 0,   // don't `zero` alloced memory
-  OOM_NULL = 1 << 1,  // return NULL on OOM
-  PUSH_END = 1 << 2   // push a new arena at the end
-} ArenaFlags;
+enum {
+  _NO_INIT = 1u << 0,   // don't `zero` alloced memory
+  _OOM_NULL = 1u << 1,  // return NULL on OOM
+  _PUSH_END = 1u << 2   // push a new arena at the end
+};
+
+typedef struct {
+  unsigned mask;
+} ArenaFlag;
+
+const ArenaFlag NO_INIT = {_NO_INIT};
+const ArenaFlag OOM_NULL = {_OOM_NULL};
 
 /** Usage:
 
@@ -96,11 +103,11 @@ typedef enum {
 
 #define New(...)                       ARENA_NEWX(__VA_ARGS__, ARENA_NEW4, ARENA_NEW3, ARENA_NEW2)(__VA_ARGS__)
 #define ARENA_NEWX(a, b, c, d, e, ...) e
-#define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, 0)
-#define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
-#define ARENA_NEW4(a, t, n, z)                                                              \
-  (t *)_Generic((z), t *: arena_alloc_init, int: arena_alloc)(a, sizeof(t), _Alignof(t), n, \
-                                                              _Generic((z), t *: z, int: z))
+#define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, (ArenaFlag){0})
+#define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, (ArenaFlag){0})
+#define ARENA_NEW4(a, t, n, z)                                       \
+  (t *)_Generic((z), t *: arena_alloc_init, ArenaFlag: arena_alloc)( \
+      a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, ArenaFlag: z))
 
 #define ArenaOOM(A)                                 \
   ({                                                \
@@ -134,7 +141,7 @@ static inline Arena NewArena(byte *mem, isize size) {
 }
 
 static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count,
-                                ArenaFlags flags) {
+                                ArenaFlag flags) {
   assert(arena != NULL && "arena cannot be NULL");
   assert(count >= 0 && "count must be positive");
 
@@ -146,17 +153,17 @@ static inline void *arena_alloc(Arena *arena, isize size, isize align, isize cou
   }
 
   isize total_size = size * count;
-  if (flags & PUSH_END) {
+  if (flags.mask & _PUSH_END) {
     arena->end -= total_size;
     current = arena->end;
   } else {
     arena->beg += padding + total_size;
     current += padding;
   }
-  return flags & NO_INIT ? current : memset(current, 0, total_size);
+  return flags.mask & _NO_INIT ? current : memset(current, 0, total_size);
 
 handle_oom:
-  if (flags & OOM_NULL || !arena->jmpbuf)
+  if (flags.mask & _OOM_NULL || !arena->jmpbuf)
     return NULL;
 #ifndef OOM_DIE
   longjmp((void *)arena->jmpbuf, 1);
@@ -175,7 +182,7 @@ static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isiz
 
 static inline Arena PushArena(Arena *arena) {
   Arena tail = *arena;
-  tail.beg = New(arena, byte, (arena->end - arena->beg) / 2, NO_INIT | PUSH_END);
+  tail.beg = New(arena, byte, (arena->end - arena->beg) / 2, (ArenaFlag){_NO_INIT | _PUSH_END});
   return tail;
 }
 
@@ -264,7 +271,7 @@ static inline astr astrconcat(Arena *arena, astr head, astr tail) {
   if (head.data + head.len != (char *)arena->beg) {
     ret = astrclone(arena, head);
   }
-  // Now head is guaranteed to be at arena tip, duplicate tail right after
+  // Now head is guaranteed to be at arena tip, clone tail and append it right after
   ret.len += astrclone(arena, tail).len;
   return ret;
 }
