@@ -54,9 +54,9 @@ struct Arena {
 };
 
 typedef enum {
-  NO_INIT  = 1 << 0,
-  OOM_NULL = 1 << 1,
-  PUSH_END = 1 << 2
+  NO_INIT = 1 << 0,   // don't `zero` alloced memory
+  OOM_NULL = 1 << 1,  // return NULL on OOM
+  PUSH_END = 1 << 2   // push a new arena at the end
 } ArenaFlags;
 
 /** Usage:
@@ -98,9 +98,9 @@ typedef enum {
 #define ARENA_NEWX(a, b, c, d, e, ...) e
 #define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, 0)
 #define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, 0)
-#define ARENA_NEW4(a, t, n, z)                                     \
-  (t *)_Generic((z), t *: arena_alloc_init, int: arena_alloc)( \
-      a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, int: z))
+#define ARENA_NEW4(a, t, n, z)                                                              \
+  (t *)_Generic((z), t *: arena_alloc_init, int: arena_alloc)(a, sizeof(t), _Alignof(t), n, \
+                                                              _Generic((z), t *: z, int: z))
 
 #define ArenaOOM(A)                                 \
   ({                                                \
@@ -112,7 +112,7 @@ typedef enum {
 #define CONCAT0(a, b) a##b
 #define CONCAT(a, b)  CONCAT0(a, b)
 
-#define ARENA_PTR   CONCAT(_arena_, __LINE__)
+#define ARENA_PTR CONCAT(_arena_, __LINE__)
 #define Shadow(arena)           \
   Arena *ARENA_PTR = arena;     \
   Arena arena[] = {*ARENA_PTR}; \
