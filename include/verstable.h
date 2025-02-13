@@ -436,15 +436,14 @@ License (MIT):
 #include <stdbool.h>
 #include <string.h>
 
-#if defined(CTX_TY) && defined(ARENA_H)
-#define MALLOC_FN   _vt_arena_malloc
-#define FREE_FN     _vt_arena_free
-
-static inline void* _vt_arena_malloc(size_t size, Arena **ctx) {
+#if __has_include("arena.h")
+#include "arena.h"
+static inline void* vt_arena_malloc(size_t size, Arena **ctx) {
   return arena_alloc(*ctx, size, sizeof(max_align_t), 1, (ArenaFlag){_OOM_NULL | _NO_INIT});
 }
 
-static inline void _vt_arena_free(void *ptr, size_t size, Arena **ctx ) { }
+static inline void vt_arena_free(void *ptr, size_t size, Arena **ctx ) {
+}
 #endif
 
 // Two-way concatenation macro.

@@ -322,4 +322,10 @@ static uint64_t astrhash(astr key) {
   return hash;
 }
 
+#if __has_include("cc.h")
+#include "cc.h"
+#define CC_CMPR astr, return strncmp(val_1.data, val_2.data, val_1.len);
+#define CC_HASH astr, return astrhash(val);
+#endif
+
 #endif  // ARENA_H
