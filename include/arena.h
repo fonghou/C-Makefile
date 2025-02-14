@@ -70,14 +70,14 @@ const ArenaFlag OOM_NULL = {_OOM_NULL};
 
   enum { ARENA_SIZE = 1 << 20 };
   void *mem = malloc(ARENA_SIZE);
-  Arena arena = NewArena(mem, ARENA_SIZE);
+  Arena arena[] = {NewArena(mem, ARENA_SIZE)};
 
-  if (ArenaOOM(&arena)) {
+  if (ArenaOOM(arena)) {
     abort();
   }
 
   {
-    Shadow(arena);
+    Scratch(arena);
 
     Ty *x = New(arena, Ty);
 
@@ -85,17 +85,17 @@ const ArenaFlag OOM_NULL = {_OOM_NULL};
 
   }
 
-  Ty a[] = New(&arena, Ty, 10);
+  Ty a[] = New(arena, Ty, 10);
   {
-    Arena tmp[] = {PushArena(arena)};
+    Arena scratch[] = {PushArena(arena)};
 
     for (int i = 0; i < 10; ++i) {
-      Ty *x = foo(tmp);
+      Ty *x = foo(scratch);
       // must move x *value* into a[i]
       a[i] = *x;
     }
 
-    PopArena(arena, tmp);
+    PopArena(arena, scratch);
   }
 
 
@@ -120,7 +120,7 @@ const ArenaFlag OOM_NULL = {_OOM_NULL};
 #define CONCAT(a, b)  CONCAT0(a, b)
 
 #define ARENA_PTR CONCAT(_arena_, __LINE__)
-#define Shadow(arena)           \
+#define Scratch(arena)          \
   Arena *ARENA_PTR = arena;     \
   Arena arena[] = {*ARENA_PTR}; \
   LogArena(*arena)
