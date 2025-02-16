@@ -101,11 +101,11 @@ const ArenaFlag OOM_NULL = {_OOM_NULL};
 
 */
 
-#define New(...)                       ARENA_NEWX(__VA_ARGS__, ARENA_NEW4, ARENA_NEW3, ARENA_NEW2)(__VA_ARGS__)
-#define ARENA_NEWX(a, b, c, d, e, ...) e
-#define ARENA_NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, (ArenaFlag){0})
-#define ARENA_NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, (ArenaFlag){0})
-#define ARENA_NEW4(a, t, n, z)                                       \
+#define New(...)                  _NEWX(__VA_ARGS__, _NEW4, _NEW3, _NEW2)(__VA_ARGS__)
+#define _NEWX(a, b, c, d, e, ...) e
+#define _NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, (ArenaFlag){0})
+#define _NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, (ArenaFlag){0})
+#define _NEW4(a, t, n, z)                                            \
   (t *)_Generic((z), t *: arena_alloc_init, ArenaFlag: arena_alloc)( \
       a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, ArenaFlag: z))
 
@@ -143,7 +143,7 @@ static inline Arena NewArena(byte *mem, isize size) {
 static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count,
                                 ArenaFlag flags) {
   assert(arena != NULL && "arena cannot be NULL");
-  assert(count >= 0 && "count must be positive");
+  assert(count > 0 && "count must be positive");
 
   byte *current = arena->beg;
   isize avail = arena->end - current;
@@ -177,7 +177,7 @@ static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isiz
                                      const void *const initptr) {
   assert(initptr != NULL && "initptr cannot be NULL");
   void *ptr = arena_alloc(arena, size, align, count, NO_INIT);
-  return memmove(ptr, initptr, size * count);
+  return ptr == initptr ? ptr : memmove(ptr, initptr, size * count);
 }
 
 static inline Arena PushArena(Arena *arena) {
@@ -191,13 +191,30 @@ static inline void PopArena(Arena *head, Arena *tail) {
   head->end = tail->end;
 }
 
-#define Push(S, A)                                                             \
-  ({                                                                           \
-    __typeof__(S) s_ = (S);                                                    \
-    if (s_->len >= s_->cap) {                                                  \
-      slice_grow(s_, sizeof(*s_->data), _Alignof(__typeof__(*s_->data)), (A)); \
-    }                                                                          \
-    s_->data + s_->len++;                                                      \
+#define Slice(...)                   _SliceX(__VA_ARGS__, _Slice4, _Slice3, _Slice2)(__VA_ARGS__)
+#define _SliceX(a, b, c, d, e, ...)  e
+#define _Slice2(arena, slice)        _Slice3(arena, slice, 0)
+#define _Slice3(arena, slice, start) _Slice4(arena, slice, start, slice.len - (start))
+#define _Slice4(arena, slice, start, length)                                \
+  ({                                                                        \
+    assert(start >= 0 && "Invalid slice range");                            \
+    assert(length > 0 && "Invalid slice range");                            \
+    assert((start) + (length) <= slice.len && "Invalid slice range");       \
+    __typeof__(slice) s_ = slice;                                           \
+    isize len = length;                                                     \
+    s_.data = New(arena, __typeof__(s_.data[0]), len, (s_.data + (start))); \
+    s_.len = len;                                                           \
+    s_.cap = len;                                                           \
+    s_;                                                                     \
+  })
+
+#define Push(slice, arena)                                                         \
+  ({                                                                               \
+    __typeof__(slice) s_ = slice;                                                  \
+    if (s_->len >= s_->cap) {                                                      \
+      slice_grow(s_, sizeof(*s_->data), _Alignof(__typeof__(*s_->data)), (arena)); \
+    }                                                                              \
+    s_->data + s_->len++;                                                          \
   })
 
 static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
@@ -225,9 +242,7 @@ static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
     void *dest = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
     void *src = slicemeta.data;
     isize len = size * slicemeta.len;
-    // allow slice to be moved between overlapping arenas
-    memmove(dest, src, len);
-    slicemeta.data = dest;
+    slicemeta.data = dest == src ? dest : memmove(dest, src, len);
   }
 
   memcpy(slice, &slicemeta, sizeof(slicemeta));
