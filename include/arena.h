@@ -177,7 +177,8 @@ static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isiz
                                      const void *const initptr) {
   assert(initptr != NULL && "initptr cannot be NULL");
   void *ptr = arena_alloc(arena, size, align, count, NO_INIT);
-  return ptr == initptr ? ptr : memmove(ptr, initptr, size * count);
+  memmove(ptr, initptr, size * count);
+  return ptr;
 }
 
 static inline Arena PushArena(Arena *arena) {
@@ -242,7 +243,8 @@ static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
     void *dest = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
     void *src = slicemeta.data;
     isize len = size * slicemeta.len;
-    slicemeta.data = dest == src ? dest : memmove(dest, src, len);
+    memmove(dest, src, len);
+    slicemeta.data = dest;
   }
 
   memcpy(slice, &slicemeta, sizeof(slicemeta));
@@ -267,11 +269,7 @@ static inline astr astrclone(Arena *arena, astr s) {
     return s2;
 
   s2.data = New(arena, char, s.len, NO_INIT);
-  if (s2.data >= s.data + s.len || s2.data + s2.len <= s.data) {
-    memcpy(s2.data, s.data, s.len);
-  } else {
-    memmove(s2.data, s.data, s.len);
-  }
+  memmove(s2.data, s.data, s.len);
   return s2;
 }
 
