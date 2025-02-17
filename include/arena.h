@@ -350,7 +350,8 @@ static uint64_t astrhash(astr key) {
 
 #if __has_include("cc.h")
 #include "cc.h"
-#define CC_CMPR astr, return strncmp(val_1.data, val_2.data, val_1.len);
+#define CC_CMPR \
+  astr, return strncmp(val_1.data, val_2.data, val_1.len < val_2.len ? val_1.len : val_2.len);
 #define CC_HASH astr, return astrhash(val);
 #endif
 
