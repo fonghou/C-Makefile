@@ -63,8 +63,8 @@ typedef struct {
   unsigned mask;
 } ArenaFlag;
 
-const ArenaFlag NO_INIT = {_NO_INIT};
-const ArenaFlag OOM_NULL = {_OOM_NULL};
+static const ArenaFlag NO_INIT = {_NO_INIT};
+static const ArenaFlag OOM_NULL = {_OOM_NULL};
 
 /** Usage:
 
@@ -179,6 +179,19 @@ static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isiz
   void *ptr = arena_alloc(arena, size, align, count, NO_INIT);
   memmove(ptr, initptr, size * count);
   return ptr;
+}
+
+static inline void *arena_malloc(size_t size, Arena *arena) {
+  return arena_alloc(arena, size, sizeof(max_align_t), 1, (ArenaFlag){_OOM_NULL | _NO_INIT});
+}
+
+static inline void arena_free(void *ptr, size_t size, Arena *arena) {
+  assert(arena != NULL && "arena cannot be NULL");
+  if (!ptr)
+    return;
+  if ((uintptr_t)ptr == (uintptr_t)arena->beg - size) {
+    arena->beg = ptr;
+  }
 }
 
 static inline Arena PushArena(Arena *arena) {

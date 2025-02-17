@@ -436,16 +436,6 @@ License (MIT):
 #include <stdbool.h>
 #include <string.h>
 
-#if __has_include("arena.h")
-#include "arena.h"
-static inline void* vt_arena_malloc(size_t size, Arena **ctx) {
-  return arena_alloc(*ctx, size, sizeof(max_align_t), 1, (ArenaFlag){_OOM_NULL | _NO_INIT});
-}
-
-static inline void vt_arena_free(void *ptr, size_t size, Arena **ctx ) {
-}
-#endif
-
 // Two-way concatenation macro.
 #define VT_CAT_( a, b ) a##b
 #define VT_CAT( a, b ) VT_CAT_( a, b )
