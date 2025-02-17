@@ -143,7 +143,10 @@ static inline Arena NewArena(byte *mem, isize size) {
 static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count,
                                 ArenaFlag flags) {
   assert(arena != NULL && "arena cannot be NULL");
-  assert(count > 0 && "count must be positive");
+  assert(count >= 0 && "count must be positive");
+
+  if (count == 0)
+    return arena->beg;
 
   byte *current = arena->beg;
   isize avail = arena->end - current;
@@ -229,17 +232,17 @@ static inline void PopArena(Arena *head, Arena *tail) {
 #define _SliceX(a, b, c, d, e, ...)  e
 #define _Slice2(arena, slice)        _Slice3(arena, slice, 0)
 #define _Slice3(arena, slice, start) _Slice4(arena, slice, start, slice.len - (start))
-#define _Slice4(arena, slice, start, length)                                \
-  ({                                                                        \
-    assert(start >= 0 && "Invalid slice range");                            \
-    assert(length > 0 && "Invalid slice range");                            \
-    assert((start) + (length) <= slice.len && "Invalid slice range");       \
-    __typeof__(slice) s_ = slice;                                           \
-    isize len = length;                                                     \
-    s_.data = New(arena, __typeof__(s_.data[0]), len, (s_.data + (start))); \
-    s_.len = len;                                                           \
-    s_.cap = len;                                                           \
-    s_;                                                                     \
+#define _Slice4(arena, slice, start, length)                                     \
+  ({                                                                             \
+    assert(start >= 0 && "Invalid slice start");                                 \
+    assert(length >= 0 && "Invalid slice length");                               \
+    assert((start) + (length) <= slice.len && "Invalid slice range");            \
+    __typeof__(slice) s_ = slice;                                                \
+    s_.len = length;                                                             \
+    s_.cap = s_.len;                                                             \
+    if (s_.data)                                                                 \
+      s_.data = New(arena, __typeof__(s_.data[0]), s_.len, (s_.data + (start))); \
+    s_;                                                                          \
   })
 
 #define Push(slice, arena)                                                         \
@@ -259,14 +262,15 @@ static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
   } slicemeta;
   memcpy(&slicemeta, slice, sizeof(slicemeta));
   assert(slicemeta.len >= 0 && "slice.len must be non-negative");
-  assert(slicemeta.cap >= slicemeta.len && "slice.cap cannot be less than slice.len");
+  assert(slicemeta.cap >= 0 && "slice cannot grow if cap is negative");
 
   const int grow = MAX_ALIGN;
 
-  if (!slicemeta.cap) {
-    // first alloc
-    slicemeta.cap = grow;
-    slicemeta.data = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
+  if (slicemeta.cap == 0) {
+    slicemeta.cap = slicemeta.len + grow;
+    void *ptr = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
+    // memcpy from stack or no-op if slicemeta.len == 0
+    slicemeta.data = memcpy(ptr, slicemeta.data, size * slicemeta.len);
   } else if ((uintptr_t)slicemeta.data == (uintptr_t)a->beg - size * slicemeta.cap) {
     // grow inplace
     arena_alloc(a, size, 1, grow, NO_INIT);
