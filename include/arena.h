@@ -181,6 +181,26 @@ static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isiz
   return ptr;
 }
 
+/** Verstable usage:
+
+static inline void *vt_arena_malloc(size_t size, arena **ctx) {
+  return arena_malloc(size, *ctx);
+}
+
+static inline void vt_arena_free(void *ptr, size_t size, arena **ctx) {
+  arena_free(ptr, size, *ctx);
+}
+
+#define NAME      Map_int_astr
+#define KEY_TY    int
+#define VAL_TY    astr
+#define CTX_TY    Arena *
+#define MALLOC_FN vt_arena_malloc
+#define FREE_FN   vt_arena_free
+#include "verstable.h"
+
+*/
+
 static inline void *arena_malloc(size_t size, Arena *arena) {
   return arena_alloc(arena, size, sizeof(max_align_t), 1, (ArenaFlag){_OOM_NULL | _NO_INIT});
 }
