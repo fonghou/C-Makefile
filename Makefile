@@ -31,7 +31,7 @@ CFLAGS   += -MMD -MP -fPIC $(WARN)
 LDFLAGS  += $(LIB)
 
 .PHONY: debug release
-debug: CFLAGS += $(SANZ) -O0 -ggdb -DLOGGING -DOOM_DIE
+debug: CFLAGS += $(SANZ) -O0 -g3 -ggdb -DLOGGING -DOOM_DIE
 debug: LDFLAGS += $(SANZ)
 debug: $(BIN_TARGET) $(LIB_TARGET)
 

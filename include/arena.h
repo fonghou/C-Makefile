@@ -122,18 +122,9 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
 #define CONCAT(a, b)  CONCAT0(a, b)
 
 #define ARENA_PTR CONCAT(_arena_, __LINE__)
-#define Scratch(arena)          \
-  Arena *ARENA_PTR = arena;     \
-  Arena arena[] = {*ARENA_PTR}; \
-  LogArena(*arena)
-
-#ifdef LOGGING
-#define LogArena(A)                                                                      \
-  fprintf(stderr, "%s:%d: Arena " #A "\tbeg=%ld end=%ld diff=%ld\n", __FILE__, __LINE__, \
-          (uintptr_t)((A).beg), (uintptr_t)((A).end), (isize)((A).end - ((A).beg)))
-#else
-#define LogArena(A) ((void)A)
-#endif
+#define Scratch(arena)      \
+  Arena *ARENA_PTR = arena; \
+  Arena arena[] = {*ARENA_PTR}
 
 static inline Arena NewArena(byte *mem, isize size) {
   Arena a = {0};
