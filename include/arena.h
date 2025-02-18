@@ -107,9 +107,9 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
 #define _NEWX(a, b, c, d, e, ...) e
 #define _NEW2(a, t)               (t *)arena_alloc(a, sizeof(t), _Alignof(t), 1, (ArenaFlag){0})
 #define _NEW3(a, t, n)            (t *)arena_alloc(a, sizeof(t), _Alignof(t), n, (ArenaFlag){0})
-#define _NEW4(a, t, n, z)                                            \
-  (t *)_Generic((z), t *: arena_alloc_init, ArenaFlag: arena_alloc)( \
-      a, sizeof(t), _Alignof(t), n, _Generic((z), t *: z, ArenaFlag: z))
+#define _NEW4(a, t, n, z)                                                                         \
+  (t *)_Generic((z), t *: arena_alloc_init, ArenaFlag: arena_alloc)(a, sizeof(t), _Alignof(t), n, \
+                                                                    _Generic((z), t *: z, ArenaFlag: z))
 
 #define ArenaOOM(A)                                 \
   ({                                                \
@@ -142,8 +142,7 @@ static inline Arena NewArena(byte *mem, isize size) {
   return a;
 }
 
-static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count,
-                                ArenaFlag flags) {
+static inline void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags) {
   assert(arena != NULL && "arena cannot be NULL");
   assert(count >= 0 && "count must be positive");
 
@@ -316,14 +315,14 @@ static inline astr astrconcat(Arena *arena, astr head, astr tail) {
   astr ret = head;
   // Ignore empty head
   if (head.len == 0) {
-    // If tail is at arena tip, return it directly; otherwise duplicate
+    // If tail is at arena tip, return it directly; otherwise clone
     return tail.len && tail.data + tail.len == (char *)arena->beg ? tail : astrclone(arena, tail);
   }
-  // If head isn't at arena tip, duplicate it
+  // If head isn't at arena tip, clone it
   if (head.data + head.len != (char *)arena->beg) {
     ret = astrclone(arena, head);
   }
-  // Now head is guaranteed to be at arena tip, clone tail and append it right after
+  // Now head is guaranteed to be at arena tip, clone tail and append it
   ret.len += astrclone(arena, tail).len;
   return ret;
 }
@@ -376,8 +375,7 @@ static uint64_t astrhash(astr key) {
 
 #if __has_include("cc.h")
 #include "cc.h"
-#define CC_CMPR \
-  astr, return strncmp(val_1.data, val_2.data, val_1.len < val_2.len ? val_1.len : val_2.len);
+#define CC_CMPR astr, return strncmp(val_1.data, val_2.data, val_1.len < val_2.len ? val_1.len : val_2.len);
 #define CC_HASH astr, return astrhash(val);
 #endif
 

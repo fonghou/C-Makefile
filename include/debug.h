@@ -13,31 +13,28 @@ define __linux__
 
 #if defined(__GNUC__) || defined(__clang__)
 #undef assert
-#define assert(c)                                                        \
-  do {                                                                   \
-    if (!(c)) {                                                          \
-      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, \
-              __func__, __FILE__, __LINE__);                             \
-      __builtin_trap();                                                  \
-    }                                                                    \
+#define assert(c)                                                                                       \
+  do {                                                                                                  \
+    if (!(c)) {                                                                                         \
+      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
+      __builtin_trap();                                                                                 \
+    }                                                                                                   \
   } while (0)
 #elif defined(_MSC_VER)
-#define assert(c)                                                        \
-  do {                                                                   \
-    if (!(c)) {                                                          \
-      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, \
-              __func__, __FILE__, __LINE__);                             \
-      __debugbreak();                                                    \
-    }                                                                    \
+#define assert(c)                                                                                       \
+  do {                                                                                                  \
+    if (!(c)) {                                                                                         \
+      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
+      __debugbreak();                                                                                   \
+    }                                                                                                   \
   } while (0)
 #elif defined(__x86_64__)
-#define assert(c)                                                        \
-  do {                                                                   \
-    if (!(c)) {                                                          \
-      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, \
-              __func__, __FILE__, __LINE__);                             \
-      __asm__ volatile("int3; nop");                                     \
-    }                                                                    \
+#define assert(c)                                                                                       \
+  do {                                                                                                  \
+    if (!(c)) {                                                                                         \
+      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
+      __asm__ volatile("int3; nop");                                                                    \
+    }                                                                                                   \
   } while (0)
 #else
 #include <assert.h>
