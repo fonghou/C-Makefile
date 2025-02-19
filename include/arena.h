@@ -140,7 +140,7 @@ static inline void *arena_alloc(Arena *arena, isize size, isize align, isize cou
   byte *current = arena->beg;
   isize avail = arena->end - current;
   isize padding = -(uintptr_t)current & (align - 1);
-  if (count > (avail - padding) / size) {
+  if (count >= (avail - padding) / size) {
     goto handle_oom;
   }
 
