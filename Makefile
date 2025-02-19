@@ -23,7 +23,7 @@ LIB_OBJ :=$(LIB_SRC:%.c=$(BUILD_DIR)/%.o)
 DEP :=$(OBJ:.o=.d)
 LIB :=$(addprefix -l,m)
 
-WARN = -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations
+WARN = -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function
 SANZ += -fno-omit-frame-pointer -fno-common -fsanitize-trap=unreachable -fsanitize=undefined,address
 
 CPPFLAGS += -I./include

@@ -212,9 +212,9 @@ static inline Arena PushArena(Arena *arena) {
   return tail;
 }
 
-static inline void PopArena(Arena *head, Arena *tail) {
-  assert(head->end <= tail->beg && "Invalid arena chain");
-  head->end = tail->end;
+static inline void PopArena(Arena *arena, Arena *scratch) {
+  assert(arena->end <= scratch->beg && "Invalid arena chain");
+  arena->end = scratch->end;
 }
 
 #define Slice(...)                   _SliceX(__VA_ARGS__, _Slice4, _Slice3, _Slice2)(__VA_ARGS__)
@@ -249,7 +249,7 @@ static inline void PopArena(Arena *head, Arena *tail) {
     s_->data + s_->len++;                                                          \
   })
 
-static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
+static inline void slice_grow(void *slice, isize size, isize align, Arena *arena) {
   struct {
     void *data;
     isize len;
@@ -262,16 +262,16 @@ static inline void slice_grow(void *slice, isize size, isize align, Arena *a) {
   if (slicemeta.cap == 0) {
     // handle slice initialized on stack
     slicemeta.cap = slicemeta.len + grow;
-    void *ptr = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
+    void *ptr = arena_alloc(arena, size, align, slicemeta.cap, NO_INIT);
     // copy from stack or no-op if slicemeta.len == 0
     slicemeta.data = memcpy(ptr, slicemeta.data, size * slicemeta.len);
-  } else if ((uintptr_t)slicemeta.data == (uintptr_t)a->beg - size * slicemeta.cap) {
+  } else if ((uintptr_t)slicemeta.data == (uintptr_t)arena->beg - size * slicemeta.cap) {
     // grow slice inplace
     slicemeta.cap += grow;
-    arena_alloc(a, size, 1, grow, NO_INIT);
+    arena_alloc(arena, size, 1, grow, NO_INIT);
   } else {
     slicemeta.cap += slicemeta.cap / 2;  // grow by 1.5
-    void *ptr = arena_alloc(a, size, align, slicemeta.cap, NO_INIT);
+    void *ptr = arena_alloc(arena, size, align, slicemeta.cap, NO_INIT);
     // move slice from possible overlapping arena
     slicemeta.data = memmove(ptr, slicemeta.data, size * slicemeta.len);
   }
