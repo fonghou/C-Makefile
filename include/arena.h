@@ -43,8 +43,11 @@ static void autofree_impl(void *p) {
 #include <setjmp.h>
 #endif
 
+// - https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66110
+// - https://software.codidact.com/posts/280966
+typedef unsigned char byte;
+
 typedef ptrdiff_t isize;
-typedef uint8_t byte;
 
 typedef struct Arena Arena;
 struct Arena {
