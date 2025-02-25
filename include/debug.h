@@ -1,5 +1,5 @@
-#ifndef DEBUG_H
-#define DEBUG_H
+#ifndef DEBUG_H_
+#define DEBUG_H_
 
 #undef assert
 #if defined(__clang__)
@@ -66,4 +66,4 @@
 #define ULOG(p) ((void)p)
 #endif
 
-#endif
+#endif  // DEBUG_H_
