@@ -41,6 +41,12 @@ static void autofree_impl(void *p) {
 #include <setjmp.h>
 #endif
 
+#ifdef OOM_COMMIT
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 // Branch optimization macros.
 #ifdef __GNUC__
 #define ARENA_LIKELY(xp)   __builtin_expect((bool)(xp), true)
@@ -61,6 +67,8 @@ static void autofree_impl(void *p) {
 
 typedef ptrdiff_t isize;
 
+#define countof(arr) ((isize)(sizeof(arr) / sizeof((arr)[0])))
+
 // - https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66110
 // - https://software.codidact.com/posts/280966
 typedef unsigned char byte;
@@ -70,12 +78,12 @@ struct Arena {
   byte *beg;
   byte *end;
   void **jmpbuf;
+  isize commit_size;
 };
 
 enum {
   _NO_INIT = 1u << 0,   // don't `zero` alloced memory
   _OOM_NULL = 1u << 1,  // return NULL on OOM
-  _PUSH_END = 1u << 2   // push a new arena at the end
 };
 
 typedef struct {
@@ -85,9 +93,16 @@ typedef struct {
 static const ArenaFlag NO_INIT = {_NO_INIT};
 static const ArenaFlag OOM_NULL = {_OOM_NULL};
 
-#define countof(arr) ((isize)(sizeof(arr) / sizeof((arr)[0])))
-
 #define MAX_ALIGN _Alignof(max_align_t)
+
+#ifndef ARENA_COMMIT_PAGE_COUNT
+#define ARENA_COMMIT_PAGE_COUNT 1
+#endif
+
+#define KB(n) (((size_t)(n)) << 10)
+#define MB(n) (((size_t)(n)) << 20)
+#define GB(n) (((size_t)(n)) << 30)
+#define TB(n) (((size_t)(n)) << 40)
 
 /** Usage:
 
@@ -179,6 +194,19 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
     s_->data + s_->len++;                                                          \
   })
 
+ARENA_INLINE Arena arena_init(byte *mem, isize size) {
+  Arena a = {0};
+#ifdef OOM_COMMIT
+  size = sysconf(_SC_PAGESIZE) * ARENA_COMMIT_PAGE_COUNT;
+  mprotect(mem, size, PROT_READ | PROT_WRITE);
+  a.commit_size = size;
+#endif
+  assert(size > 0 && "try build with -DOOM_COMMIT");
+  a.beg = mem;
+  a.end = mem ? mem + size : 0;
+  return a;
+}
+
 static void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags) {
   assert(arena != NULL && "arena cannot be NULL");
   assert(count >= 0 && "count must be positive");
@@ -186,20 +214,25 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
   byte *current = arena->beg;
   isize avail = arena->end - current;
   isize padding = -(uintptr_t)current & (align - 1);
-  if (ARENA_UNLIKELY(count >= (avail - padding) / size)) {
+  while (ARENA_UNLIKELY(count >= (avail - padding) / size)) {
+#ifdef OOM_COMMIT
+    if (mprotect(arena->end, arena->commit_size, PROT_READ | PROT_WRITE) == -1) {
+      perror("mprotect");
+      goto handle_oom;
+    } else {
+      arena->end += arena->commit_size;
+      avail = arena->end - current;
+      continue;
+    }
+#endif
     if (flags.mask & _OOM_NULL)
       return NULL;
     goto handle_oom;
   }
 
   isize total_size = size * count;
-  if (flags.mask & _PUSH_END) {
-    arena->end -= total_size;
-    current = arena->end;
-  } else {
-    arena->beg += padding + total_size;
-    current += padding;
-  }
+  arena->beg += padding + total_size;
+  current += padding;
   return flags.mask & _NO_INIT ? current : memset(current, 0, total_size);
 
 handle_oom:
@@ -279,24 +312,6 @@ static inline void arena_free(void *ptr, size_t size, Arena *arena) {
   if ((uintptr_t)ptr == (uintptr_t)arena->beg - size) {
     arena->beg = ptr;
   }
-}
-
-ARENA_INLINE Arena arena_init(byte *mem, isize size) {
-  Arena a = {0};
-  a.beg = mem;
-  a.end = mem ? mem + size : 0;
-  return a;
-}
-
-ARENA_INLINE Arena arena_push(Arena *arena) {
-  Arena tail = *arena;
-  tail.beg = New(arena, byte, (arena->end - arena->beg) / 2, (ArenaFlag){_NO_INIT | _PUSH_END});
-  return tail;
-}
-
-ARENA_INLINE void arena_pop(Arena *arena, Arena *scratch) {
-  assert(arena->end <= scratch->beg && "Invalid arena chain");
-  arena->end = scratch->end;
 }
 
 // Arena owned str (aka astr)
