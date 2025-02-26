@@ -16,8 +16,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define countof(arr) (sizeof(arr) / sizeof((arr)[0]))
-
 #if __has_include("debug.h")
 #include "debug.h"
 #else
@@ -30,7 +28,7 @@ static void autofree_impl(void *p) {
 }
 #define autofree __attribute__((__cleanup__(autofree_impl)))
 #else
-#error "autofree is not supported"
+#warning "autofree is not supported on your compiler, use free()"
 #define autofree
 #endif
 
@@ -43,11 +41,29 @@ static void autofree_impl(void *p) {
 #include <setjmp.h>
 #endif
 
+// Branch optimization macros.
+#ifdef __GNUC__
+#define ARENA_LIKELY(xp)   __builtin_expect((bool)(xp), true)
+#define ARENA_UNLIKELY(xp) __builtin_expect((bool)(xp), false)
+#else
+#define ARENA_LIKELY(xp)   (xp)
+#define ARENA_UNLIKELY(xp) (xp)
+#endif
+
+// Ensures inlining if possible.
+#if defined(__GNUC__)
+#define ARENA_INLINE static inline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#define ARENA_INLINE static inline __forceinline
+#else
+#define ARENA_INLINE static inline
+#endif
+
+typedef ptrdiff_t isize;
+
 // - https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66110
 // - https://software.codidact.com/posts/280966
 typedef unsigned char byte;
-
-typedef ptrdiff_t isize;
 
 typedef struct Arena Arena;
 struct Arena {
@@ -68,6 +84,8 @@ typedef struct {
 
 static const ArenaFlag NO_INIT = {_NO_INIT};
 static const ArenaFlag OOM_NULL = {_OOM_NULL};
+
+#define countof(arr) ((isize)(sizeof(arr) / sizeof((arr)[0])))
 
 #define MAX_ALIGN _Alignof(max_align_t)
 
@@ -161,21 +179,16 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
     s_->data + s_->len++;                                                          \
   })
 
-#ifndef ARENA_IMPLEMENTATION
-
-void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags);
-void slice_grow(void *slice, isize size, isize align, Arena *arena);
-
-#else
-
-void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags) {
+static void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags) {
   assert(arena != NULL && "arena cannot be NULL");
   assert(count >= 0 && "count must be positive");
 
   byte *current = arena->beg;
   isize avail = arena->end - current;
   isize padding = -(uintptr_t)current & (align - 1);
-  if (count >= (avail - padding) / size) {
+  if (ARENA_UNLIKELY(count >= (avail - padding) / size)) {
+    if (flags.mask & _OOM_NULL)
+      return NULL;
     goto handle_oom;
   }
 
@@ -190,17 +203,14 @@ void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag 
   return flags.mask & _NO_INIT ? current : memset(current, 0, total_size);
 
 handle_oom:
-  if (flags.mask & _OOM_NULL || !arena->jmpbuf)
-    return NULL;
-#ifndef OOM_DIE
-  longjmp((void *)arena->jmpbuf, 1);
-#else
-  assert(!OOM_DIE);
+#ifdef OOM_DIE
   abort();
 #endif
+  assert(arena->jmpbuf && "not set by ArenaOOM");
+  longjmp((void *)arena->jmpbuf, 1);
 }
 
-void slice_grow(void *slice, isize size, isize align, Arena *arena) {
+ARENA_INLINE void slice_grow(void *slice, isize size, isize align, Arena *arena) {
   struct {
     void *data;
     isize len;
@@ -216,7 +226,7 @@ void slice_grow(void *slice, isize size, isize align, Arena *arena) {
     void *ptr = arena_alloc(arena, size, align, slicemeta.cap, NO_INIT);
     // copy from stack or no-op if slicemeta.len == 0
     slicemeta.data = memcpy(ptr, slicemeta.data, size * slicemeta.len);
-  } else if ((uintptr_t)slicemeta.data == (uintptr_t)arena->beg - size * slicemeta.cap) {
+  } else if (ARENA_LIKELY((uintptr_t)slicemeta.data == (uintptr_t)arena->beg - size * slicemeta.cap)) {
     // grow slice inplace
     slicemeta.cap += grow;
     arena_alloc(arena, size, 1, grow, NO_INIT);
@@ -230,10 +240,8 @@ void slice_grow(void *slice, isize size, isize align, Arena *arena) {
   memcpy(slice, &slicemeta, sizeof(slicemeta));
 }
 
-#endif  // ARENA_IMPLEMENTATION
-
-static inline void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
-                                     const void *const initptr) {
+ARENA_INLINE void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
+                                    const void *const initptr) {
   assert(initptr != NULL && "initptr cannot be NULL");
   void *ptr = arena_alloc(arena, size, align, count, NO_INIT);
   memmove(ptr, initptr, size * count);
@@ -260,8 +268,8 @@ static inline void vt_arena_free(void *ptr, size_t size, arena **ctx) {
 
 */
 
-static inline void *arena_malloc(size_t size, Arena *arena) {
-  return arena_alloc(arena, size, MAX_ALIGN, 1, (ArenaFlag){_OOM_NULL | _NO_INIT});
+ARENA_INLINE void *arena_malloc(size_t size, Arena *arena) {
+  return arena_alloc(arena, size, MAX_ALIGN, 1, NO_INIT);
 }
 
 static inline void arena_free(void *ptr, size_t size, Arena *arena) {
@@ -273,20 +281,20 @@ static inline void arena_free(void *ptr, size_t size, Arena *arena) {
   }
 }
 
-static inline Arena NewArena(byte *mem, isize size) {
+ARENA_INLINE Arena arena_init(byte *mem, isize size) {
   Arena a = {0};
   a.beg = mem;
   a.end = mem ? mem + size : 0;
   return a;
 }
 
-static inline Arena PushArena(Arena *arena) {
+ARENA_INLINE Arena arena_push(Arena *arena) {
   Arena tail = *arena;
   tail.beg = New(arena, byte, (arena->end - arena->beg) / 2, (ArenaFlag){_NO_INIT | _PUSH_END});
   return tail;
 }
 
-static inline void PopArena(Arena *arena, Arena *scratch) {
+ARENA_INLINE void arena_pop(Arena *arena, Arena *scratch) {
   assert(arena->end <= scratch->beg && "Invalid arena chain");
   arena->end = scratch->end;
 }
@@ -303,7 +311,7 @@ typedef struct astr {
 // printf("%.*s", S(s))
 #define S(s) (int)(s).len, (s).data
 
-static inline astr astrclone(Arena *arena, astr s) {
+ARENA_INLINE astr astrclone(Arena *arena, astr s) {
   astr s2 = s;
   // Early return if string is empty or already at arena boundary
   if (!s.len || s.data + s.len == (char *)arena->beg)
@@ -314,7 +322,7 @@ static inline astr astrclone(Arena *arena, astr s) {
   return s2;
 }
 
-static inline astr astrconcat(Arena *arena, astr head, astr tail) {
+ARENA_INLINE astr astrconcat(Arena *arena, astr head, astr tail) {
   astr ret = head;
   // Ignore empty head
   if (head.len == 0) {
@@ -330,23 +338,23 @@ static inline astr astrconcat(Arena *arena, astr head, astr tail) {
   return ret;
 }
 
-static inline astr astrcopy(Arena *arena, const void *bytes, size_t nbytes) {
+ARENA_INLINE astr astrcopy(Arena *arena, const void *bytes, size_t nbytes) {
   return astrclone(arena, (astr){(char *)bytes, nbytes});
 }
 
-static inline astr astrappend(Arena *arena, astr head, const void *bytes, size_t nbytes) {
+ARENA_INLINE astr astrappend(Arena *arena, astr head, const void *bytes, size_t nbytes) {
   return astrconcat(arena, head, (astr){(char *)bytes, nbytes});
 }
 
-static inline astr astrcpy(Arena *arena, const char *str) {
+ARENA_INLINE astr astrcpy(Arena *arena, const char *str) {
   return astrcopy(arena, str, strlen(str));
 }
 
-static inline astr astrcat(Arena *arena, astr head, const char *str) {
+ARENA_INLINE astr astrcat(Arena *arena, astr head, const char *str) {
   return astrappend(arena, head, str, strlen(str));
 }
 
-static inline astr astrfmt(Arena *arena, const char *format, ...) {
+static astr astrfmt(Arena *arena, const char *format, ...) {
   va_list args;
   va_start(args, format);
   int nbytes = vsnprintf(NULL, 0, format, args);
@@ -361,14 +369,14 @@ static inline astr astrfmt(Arena *arena, const char *format, ...) {
   return (astr){.data = data, .len = nbytes};
 }
 
-static inline bool astrcmp(astr a, astr b) {
+ARENA_INLINE bool astrcmp(astr a, astr b) {
   if (a.len != b.len)
     return false;
 
   return !a.len || !memcmp(a.data, b.data, a.len);
 }
 
-static uint64_t astrhash(astr key) {
+ARENA_INLINE uint64_t astrhash(astr key) {
   uint64_t hash = 0xcbf29ce484222325ull;
   for (isize i = 0; i < key.len; i++)
     hash = ((unsigned char)key.data[i] ^ hash) * 0x100000001b3ull;
