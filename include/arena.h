@@ -16,10 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if __has_include("debug.h")
-#include "debug.h"
-#else
-#include <assert.h>
+#ifdef OOM_COMMIT
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <unistd.h>
 #endif
 
 #ifdef __GNUC__
@@ -41,10 +41,47 @@ static void autofree_impl(void *p) {
 #include <setjmp.h>
 #endif
 
-#ifdef OOM_COMMIT
-#include <sys/mman.h>
-#include <sys/types.h>
-#include <unistd.h>
+#if defined(__clang__)
+#define Assert(c)                                                                                       \
+  do {                                                                                                  \
+    if (!(c)) {                                                                                         \
+      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
+      __builtin_debugtrap();                                                                            \
+    }                                                                                                   \
+  } while (0)
+#elif defined(__x86_64__)
+#define Assert(c)                                                                                       \
+  do {                                                                                                  \
+    if (!(c)) {                                                                                         \
+      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
+      __asm__ volatile("int3; nop");                                                                    \
+    }                                                                                                   \
+  } while (0)
+#elif defined(__GNUC__)
+#define Assert(c)                                                                                       \
+  do {                                                                                                  \
+    if (!(c)) {                                                                                         \
+      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
+      __builtin_trap();                                                                                 \
+    }                                                                                                   \
+  } while (0)
+#elif defined(_MSC_VER)
+#define Assert(c)                                                                                       \
+  do {                                                                                                  \
+    if (!(c)) {                                                                                         \
+      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
+      __debugbreak();                                                                                   \
+    }                                                                                                   \
+  } while (0)
+#else
+#include <signal.h>
+#define Assert(c)                                                                                       \
+  do {                                                                                                  \
+    if (!(c)) {                                                                                         \
+      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
+      raise(SIGTRAP);                                                                                   \
+    }                                                                                                   \
+  } while (0)
 #endif
 
 // Branch optimization macros.
@@ -168,9 +205,9 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
 #define _Slice3(arena, slice, start) _Slice4(arena, slice, start, slice.len - (start))
 #define _Slice4(arena, slice, start, length)                                     \
   ({                                                                             \
-    assert(start >= 0 && "slice start must be non-negative");                    \
-    assert(length >= 0 && "slice length must be non-negative");                  \
-    assert((start) + (length) <= slice.len && "Invalid slice range");            \
+    Assert(start >= 0 && "slice start must be non-negative");                    \
+    Assert(length >= 0 && "slice length must be non-negative");                  \
+    Assert((start) + (length) <= slice.len && "Invalid slice range");            \
     __typeof__(slice) s_ = slice;                                                \
     s_.cap = s_.len = length;                                                    \
     if (s_.len == 0) {                                                           \
@@ -184,9 +221,9 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
 
 #define Push(slice, arena)                                                         \
   ({                                                                               \
-    assert((slice)->len >= 0 && "slice.len must be non-negative");                 \
-    assert((slice)->cap >= 0 && "slice.cap must be non-negative");                 \
-    assert(!((slice)->len == 0 && (slice)->data != NULL) && "Invalid slice");      \
+    Assert((slice)->len >= 0 && "slice.len must be non-negative");                 \
+    Assert((slice)->cap >= 0 && "slice.cap must be non-negative");                 \
+    Assert(!((slice)->len == 0 && (slice)->data != NULL) && "Invalid slice");      \
     __typeof__(slice) s_ = slice;                                                  \
     if (s_->len >= s_->cap) {                                                      \
       slice_grow(s_, sizeof(*s_->data), _Alignof(__typeof__(*s_->data)), (arena)); \
@@ -201,15 +238,15 @@ ARENA_INLINE Arena arena_init(byte *mem, isize size) {
   mprotect(mem, size, PROT_READ | PROT_WRITE);
   a.commit_size = size;
 #endif
-  assert(size > 0 && "try build with -DOOM_COMMIT");
+  Assert(size > 0 && "try build with -DOOM_COMMIT");
   a.beg = mem;
   a.end = mem ? mem + size : 0;
   return a;
 }
 
 static void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags) {
-  assert(arena != NULL && "arena cannot be NULL");
-  assert(count >= 0 && "count must be positive");
+  Assert(arena != NULL && "arena cannot be NULL");
+  Assert(count >= 0 && "count must be positive");
 
   byte *current = arena->beg;
   isize avail = arena->end - current;
@@ -237,9 +274,9 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
 
 handle_oom:
 #ifdef OOM_DIE
-  abort();
+  Assert(!OOM_DIE);
 #endif
-  assert(arena->jmpbuf && "not set by ArenaOOM");
+  Assert(arena->jmpbuf && "not set by ArenaOOM");
   longjmp((void *)arena->jmpbuf, 1);
 }
 
@@ -275,7 +312,7 @@ ARENA_INLINE void slice_grow(void *slice, isize size, isize align, Arena *arena)
 
 ARENA_INLINE void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
                                     const void *const initptr) {
-  assert(initptr != NULL && "initptr cannot be NULL");
+  Assert(initptr != NULL && "initptr cannot be NULL");
   void *ptr = arena_alloc(arena, size, align, count, NO_INIT);
   memmove(ptr, initptr, size * count);
   return ptr;
@@ -306,7 +343,7 @@ ARENA_INLINE void *arena_malloc(size_t size, Arena *arena) {
 }
 
 static inline void arena_free(void *ptr, size_t size, Arena *arena) {
-  assert(arena != NULL && "arena cannot be NULL");
+  Assert(arena != NULL && "arena cannot be NULL");
   if (!ptr)
     return;
   if ((uintptr_t)ptr == (uintptr_t)arena->beg - size) {
@@ -374,12 +411,12 @@ static astr astrfmt(Arena *arena, const char *format, ...) {
   va_start(args, format);
   int nbytes = vsnprintf(NULL, 0, format, args);
   va_end(args);
-  assert(nbytes >= 0);
+  Assert(nbytes >= 0);
   void *data = New(arena, char, nbytes + 1, NO_INIT);
   va_start(args, format);
   int nbytes2 = vsnprintf(data, nbytes + 1, format, args);
   va_end(args);
-  assert(nbytes2 == nbytes);
+  Assert(nbytes2 == nbytes);
   arena->beg--;
   return (astr){.data = data, .len = nbytes};
 }
