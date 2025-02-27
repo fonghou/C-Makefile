@@ -266,8 +266,8 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
   return flags.mask & _NO_INIT ? current : memset(current, 0, total_size);
 
 handle_oom:
-#ifdef OOM_DIE
-  Assert(!OOM_DIE);
+#ifdef OOM_TRAP
+  Assert(!OOM_TRAP);
 #endif
   Assert(arena->jmpbuf && "not set by ArenaOOM");
   longjmp((void *)arena->jmpbuf, 1);
