@@ -22,16 +22,6 @@
 #include <unistd.h>
 #endif
 
-#ifdef __GNUC__
-static void autofree_impl(void *p) {
-  free(*((void **)p));
-}
-#define autofree __attribute__((__cleanup__(autofree_impl)))
-#else
-#warning "autofree is not supported on your compiler, use free()"
-#define autofree
-#endif
-
 #if defined(__GNUC__) && !defined(__APPLE__)
 #undef setjmp
 #define setjmp  __builtin_setjmp
@@ -115,7 +105,9 @@ struct Arena {
   byte *beg;
   byte *end;
   void **jmpbuf;
+#ifdef OOM_COMMIT
   isize commit_size;
+#endif
 };
 
 enum {
@@ -143,9 +135,15 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
 
 /** Usage:
 
-  enum { ARENA_SIZE = 1 << 20 };
-  void *mem = malloc(ARENA_SIZE);
-  Arena arena[] = {NewArena(mem, ARENA_SIZE)};
+#define ARENA_SIZE MB(128)
+
+#ifdef OOM_COMMIT
+  void *mem = mmap(0, ARENA_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  Arena arena[] = { arena_init(mem, 0) };
+#else
+  autofree void *mem = malloc(ARENA_SIZE);
+  Arena arena[] = { arena_init(mem, ARENA_SIZE) };
+#endif
 
   if (ArenaOOM(arena)) {
     abort();
@@ -159,20 +157,6 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
     // x pointer cannot escape this block
 
   }
-
-  Ty a[] = New(arena, Ty, 10);
-  {
-    Arena scratch[] = {PushArena(arena)};
-
-    for (int i = 0; i < 10; ++i) {
-      Ty *x = foo(scratch);
-      // must move x *value* into a[i]
-      a[i] = *x;
-    }
-
-    PopArena(arena, scratch);
-  }
-
 
 */
 
@@ -231,6 +215,16 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
     s_->data + s_->len++;                                                          \
   })
 
+#ifdef __GNUC__
+static void autofree_impl(void *p) {
+  free(*((void **)p));
+}
+#define autofree __attribute__((__cleanup__(autofree_impl)))
+#else
+#warning "autofree is not supported on your compiler, use free()"
+#define autofree
+#endif
+
 ARENA_INLINE Arena arena_init(byte *mem, isize size) {
   Arena a = {0};
 #ifdef OOM_COMMIT
@@ -256,11 +250,10 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
     if (mprotect(arena->end, arena->commit_size, PROT_READ | PROT_WRITE) == -1) {
       perror("mprotect");
       goto handle_oom;
-    } else {
-      arena->end += arena->commit_size;
-      avail = arena->end - current;
-      continue;
     }
+    arena->end += arena->commit_size;
+    avail = arena->end - current;
+    continue;
 #endif
     if (flags.mask & _OOM_NULL)
       return NULL;
@@ -278,6 +271,14 @@ handle_oom:
 #endif
   Assert(arena->jmpbuf && "not set by ArenaOOM");
   longjmp((void *)arena->jmpbuf, 1);
+}
+
+ARENA_INLINE void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
+                                    const void *const initptr) {
+  Assert(initptr != NULL && "initptr cannot be NULL");
+  void *ptr = arena_alloc(arena, size, align, count, NO_INIT);
+  memmove(ptr, initptr, size * count);
+  return ptr;
 }
 
 ARENA_INLINE void slice_grow(void *slice, isize size, isize align, Arena *arena) {
@@ -310,14 +311,6 @@ ARENA_INLINE void slice_grow(void *slice, isize size, isize align, Arena *arena)
   memcpy(slice, &slicemeta, sizeof(slicemeta));
 }
 
-ARENA_INLINE void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
-                                    const void *const initptr) {
-  Assert(initptr != NULL && "initptr cannot be NULL");
-  void *ptr = arena_alloc(arena, size, align, count, NO_INIT);
-  memmove(ptr, initptr, size * count);
-  return ptr;
-}
-
 /** Usage:
 
 static inline void *vt_arena_malloc(size_t size, arena **ctx) {
@@ -342,7 +335,7 @@ ARENA_INLINE void *arena_malloc(size_t size, Arena *arena) {
   return arena_alloc(arena, size, MAX_ALIGN, 1, NO_INIT);
 }
 
-static inline void arena_free(void *ptr, size_t size, Arena *arena) {
+ARENA_INLINE void arena_free(void *ptr, size_t size, Arena *arena) {
   Assert(arena != NULL && "arena cannot be NULL");
   if (!ptr)
     return;
