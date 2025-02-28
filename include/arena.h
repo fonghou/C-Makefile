@@ -222,7 +222,7 @@ ARENA_INLINE Arena arena_init(byte *mem, isize size) {
   mprotect(mem, size, PROT_READ | PROT_WRITE);
   a.commit_size = size;
 #endif
-  Assert(size > 0 && "try build with -DOOM_COMMIT");
+  Assert(size > 0 && "arena size must be positive; or use -DOOM_COMMIT for commit-on-demand");
   a.beg = mem;
   a.end = mem ? mem + size : 0;
   return a;
@@ -400,8 +400,15 @@ static astr astrfmt(Arena *arena, const char *format, ...) {
   int nbytes2 = vsnprintf(data, nbytes + 1, format, args);
   va_end(args);
   Assert(nbytes2 == nbytes);
+  // drop \0 so that astrconcat still works
   arena->beg--;
   return (astr){.data = data, .len = nbytes};
+}
+
+// return a temporary null-terminated string to be passed immediately
+// into tranditional c string api.
+ARENA_INLINE const char *tocstr(Arena arena, astr s) {
+  return astrconcat(&arena, s, astr("\0")).data;
 }
 
 ARENA_INLINE bool astrcmp(astr a, astr b) {
