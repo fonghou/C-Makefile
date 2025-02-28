@@ -1,11 +1,23 @@
+/**
+ * @file arena.h
+ * @brief A fast, region-based memory allocator with optional commit-on-demand support.
+ *
+ * This arena allocator provides a simple, efficient way to manage memory in a contiguous
+ * region. It supports both immediate allocation and commit-on-demand via mmap (when
+ * OOM_COMMIT is defined). Key features:
+ * - Fast allocation with minimal overhead
+ * - Optional zero-initialization
+ * - Slice and string utilities
+ * - OOM handling via setjmp/longjmp or NULL return
+ *
+ * Credit:
+ * - https://nullprogram.com/blog/2023/09/27/
+ * - https://nullprogram.com/blog/2023/10/05/
+ * - https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/c11-generic/#inline
+ */
+
 #ifndef ARENA_H_
 #define ARENA_H_
-
-/** Credit:
-    https://nullprogram.com/blog/2023/09/27/
-    https://nullprogram.com/blog/2023/10/05/
-    https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/c11-generic/#inline
-*/
 
 #include <memory.h>
 #include <stdarg.h>
@@ -31,48 +43,26 @@
 #include <setjmp.h>
 #endif
 
-#if defined(__clang__)
-#define Assert(c)                                                                                       \
-  do {                                                                                                  \
-    if (!(c)) {                                                                                         \
-      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
-      __builtin_debugtrap();                                                                            \
-    }                                                                                                   \
-  } while (0)
+#ifdef __clang__
+#define TRAP(c) __builtin_debugtrap();
 #elif defined(__x86_64__)
-#define Assert(c)                                                                                       \
-  do {                                                                                                  \
-    if (!(c)) {                                                                                         \
-      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
-      __asm__ volatile("int3; nop");                                                                    \
-    }                                                                                                   \
-  } while (0)
+#define TRAP(c) __asm__ volatile("int3; nop");
 #elif defined(__GNUC__)
-#define Assert(c)                                                                                       \
-  do {                                                                                                  \
-    if (!(c)) {                                                                                         \
-      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
-      __builtin_trap();                                                                                 \
-    }                                                                                                   \
-  } while (0)
+#define TRAP(c) __builtin_trap();
 #elif defined(_MSC_VER)
-#define Assert(c)                                                                                       \
-  do {                                                                                                  \
-    if (!(c)) {                                                                                         \
-      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
-      __debugbreak();                                                                                   \
-    }                                                                                                   \
-  } while (0)
+#define TRAP(c) __debugbreak();
 #else
 #include <signal.h>
+#define TRAP(c) raise(SIGTRAP);
+#endif
+
 #define Assert(c)                                                                                       \
   do {                                                                                                  \
     if (!(c)) {                                                                                         \
       fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
-      raise(SIGTRAP);                                                                                   \
+      TRAP();                                                                                           \
     }                                                                                                   \
   } while (0)
-#endif
 
 // Branch optimization macros.
 #ifdef __GNUC__
@@ -248,15 +238,13 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
   while (ARENA_UNLIKELY(count >= (avail - padding) / size)) {
 #ifdef OOM_COMMIT
     if (mprotect(arena->end, arena->commit_size, PROT_READ | PROT_WRITE) == -1) {
-      perror("mprotect");
+      perror("arena_alloc mprotect");
       goto handle_oom;
     }
     arena->end += arena->commit_size;
     avail = arena->end - current;
     continue;
 #endif
-    if (flags.mask & _OOM_NULL)
-      return NULL;
     goto handle_oom;
   }
 
@@ -266,6 +254,8 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
   return flags.mask & _NO_INIT ? current : memset(current, 0, total_size);
 
 handle_oom:
+  if (flags.mask & _OOM_NULL)
+    return NULL;
 #ifdef OOM_TRAP
   Assert(!OOM_TRAP);
 #endif
