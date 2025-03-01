@@ -373,20 +373,20 @@ ARENA_INLINE astr astrconcat(Arena *arena, astr head, astr tail) {
   return ret;
 }
 
-ARENA_INLINE astr astrcopy(Arena *arena, const void *bytes, size_t nbytes) {
+ARENA_INLINE astr astrbytes(Arena *arena, const void *bytes, size_t nbytes) {
   return astrclone(arena, (astr){(char *)bytes, nbytes});
 }
 
-ARENA_INLINE astr astrappend(Arena *arena, astr head, const void *bytes, size_t nbytes) {
+ARENA_INLINE astr astrstr(Arena *arena, const char *str) {
+  return astrbytes(arena, str, strlen(str));
+}
+
+ARENA_INLINE astr astrcatbytes(Arena *arena, astr head, const void *bytes, size_t nbytes) {
   return astrconcat(arena, head, (astr){(char *)bytes, nbytes});
 }
 
-ARENA_INLINE astr astrcpy(Arena *arena, const char *str) {
-  return astrcopy(arena, str, strlen(str));
-}
-
-ARENA_INLINE astr astrcat(Arena *arena, astr head, const char *str) {
-  return astrappend(arena, head, str, strlen(str));
+ARENA_INLINE astr astrcatstr(Arena *arena, astr head, const char *str) {
+  return astrcatbytes(arena, head, str, strlen(str));
 }
 
 static astr astrfmt(Arena *arena, const char *format, ...) {
@@ -405,10 +405,17 @@ static astr astrfmt(Arena *arena, const char *format, ...) {
   return (astr){.data = data, .len = nbytes};
 }
 
-// return a temporary null-terminated string to be passed immediately
-// into tranditional c string api.
-ARENA_INLINE const char *tocstr(Arena arena, astr s) {
+// return a temporary c string to be passed immediately
+// into tranditional null-terminated string api call.
+// its lifetime last until next arena allocation
+ARENA_INLINE const char *tostr(Arena arena, astr s) {
   return astrconcat(&arena, s, astr("\0")).data;
+}
+
+// heap copy a null-termniated string.
+// must free() by caller
+ARENA_INLINE char *tostrdup(astr s) {
+  return strndup(s.data, s.len);
 }
 
 ARENA_INLINE bool astrcmp(astr a, astr b) {
