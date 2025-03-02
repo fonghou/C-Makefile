@@ -92,6 +92,7 @@ typedef unsigned char byte;
 
 typedef struct Arena Arena;
 struct Arena {
+  byte *init;
   byte *beg;
   byte *end;
   void **jmpbuf;
@@ -129,11 +130,11 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
 
 #ifdef OOM_COMMIT
   void *mem = mmap(0, ARENA_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  Arena arena[] = { arena_init(mem, 0) };
 #else
   autofree void *mem = malloc(ARENA_SIZE);
-  Arena arena[] = { arena_init(mem, ARENA_SIZE) };
 #endif
+
+  Arena arena[] = { arena_init(mem, ARENA_SIZE) };
 
   if (ArenaOOM(arena)) {
     abort();
@@ -223,9 +224,13 @@ ARENA_INLINE Arena arena_init(byte *mem, isize size) {
   a.commit_size = size;
 #endif
   Assert(size > 0 && "arena size must be positive; or use -DOOM_COMMIT for commit-on-demand");
-  a.beg = mem;
+  a.init = a.beg = mem;
   a.end = mem ? mem + size : 0;
   return a;
+}
+
+ARENA_INLINE void arena_reset(Arena *arena) {
+  arena->beg = arena->init;
 }
 
 static void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags) {
@@ -234,8 +239,8 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
 
   byte *current = arena->beg;
   isize avail = arena->end - current;
-  isize padding = -(uintptr_t)current & (align - 1);
-  while (ARENA_UNLIKELY(count >= (avail - padding) / size)) {
+  isize pad = -(uintptr_t)current & (align - 1);
+  while (ARENA_UNLIKELY(count >= (avail - pad) / size)) {
 #ifdef OOM_COMMIT
     if (mprotect(arena->end, arena->commit_size, PROT_READ | PROT_WRITE) == -1) {
       perror("arena_alloc mprotect");
@@ -249,8 +254,8 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
   }
 
   isize total_size = size * count;
-  arena->beg += padding + total_size;
-  current += padding;
+  arena->beg += pad + total_size;
+  current += pad;
   return flags.mask & _NO_INIT ? current : memset(current, 0, total_size);
 
 handle_oom:
