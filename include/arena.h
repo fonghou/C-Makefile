@@ -92,6 +92,7 @@ typedef unsigned char byte;
 
 typedef struct Arena Arena;
 struct Arena {
+  byte *init;
   byte *beg;
   byte *end;
   void **jmpbuf;
@@ -219,13 +220,20 @@ ARENA_INLINE Arena arena_init(byte *mem, isize size) {
   Arena a = {0};
 #ifdef OOM_COMMIT
   size = sysconf(_SC_PAGESIZE) * ARENA_COMMIT_PAGE_COUNT;
-  mprotect(mem, size, PROT_READ | PROT_WRITE);
+  if (mprotect(mem, size, PROT_READ | PROT_WRITE) == -1)) {
+      perror("arena_init mprotect");
+      abort();
+    }
   a.commit_size = size;
 #endif
   Assert(size > 0 && "arena size must be positive; or use -DOOM_COMMIT for commit-on-demand");
-  a.beg = mem;
+  a.init = a.beg = mem;
   a.end = mem ? mem + size : 0;
   return a;
+}
+
+ARENA_INLINE void arena_reset(Arena *arena) {
+  arena->beg = arena->init;
 }
 
 static void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags) {
