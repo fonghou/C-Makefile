@@ -43,27 +43,6 @@
 #include <setjmp.h>
 #endif
 
-#ifdef __clang__
-#define TRAP(c) __builtin_debugtrap();
-#elif defined(__x86_64__)
-#define TRAP(c) __asm__ volatile("int3; nop");
-#elif defined(__GNUC__)
-#define TRAP(c) __builtin_trap();
-#elif defined(_MSC_VER)
-#define TRAP(c) __debugbreak();
-#else
-#include <signal.h>
-#define TRAP(c) raise(SIGTRAP);
-#endif
-
-#define Assert(c)                                                                                       \
-  do {                                                                                                  \
-    if (!(c)) {                                                                                         \
-      fprintf(stderr, "Assertion failed: %s in function %s %s:%d\n", #c, __func__, __FILE__, __LINE__); \
-      TRAP();                                                                                           \
-    }                                                                                                   \
-  } while (0)
-
 // Branch optimization macros.
 #ifdef __GNUC__
 #define ARENA_LIKELY(xp)   __builtin_expect((bool)(xp), true)
@@ -73,14 +52,30 @@
 #define ARENA_UNLIKELY(xp) (xp)
 #endif
 
-// Ensures inlining if possible.
-#if defined(__GNUC__)
-#define ARENA_INLINE static inline __attribute__((always_inline))
-#elif defined(_MSC_VER)
-#define ARENA_INLINE static inline __forceinline
+#ifdef __clang__
+#define TRAP(c) __builtin_debugtrap();
+#elif defined(__x86_64__)
+#define TRAP(c) __asm__("int3; nop");
+#elif defined(__GNUC__)
+#define TRAP(c) __builtin_trap();
 #else
-#define ARENA_INLINE static inline
+#include <signal.h>
+#define TRAP(c) raise(SIGTRAP);
 #endif
+
+#ifndef NDEBUG
+#define ASSERT_LOG(c) fprintf(stderr, "Assertion failed: %s at %s %s:%d\n", #c, __func__, __FILE__, __LINE__)
+#else
+#define ASSERT_LOG(c) (void)0
+#endif
+
+#define Assert(c)               \
+  do {                          \
+    if (ARENA_UNLIKELY(!(c))) { \
+      ASSERT_LOG(#c);           \
+      TRAP();                   \
+    }                           \
+  } while (0)
 
 typedef ptrdiff_t isize;
 
@@ -214,6 +209,13 @@ static void autofree_impl(void *p) {
 #else
 #warning "autofree is not supported on your compiler, use free()"
 #define autofree
+#endif
+
+// Ensures inlining if possible.
+#if defined(__GNUC__)
+#define ARENA_INLINE static inline __attribute__((always_inline))
+#else
+#define ARENA_INLINE static inline
 #endif
 
 ARENA_INLINE Arena arena_init(byte *mem, isize size) {
