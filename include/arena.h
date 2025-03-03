@@ -77,6 +77,11 @@
     }                           \
   } while (0)
 
+#define KB(n) (((size_t)(n)) << 10)
+#define MB(n) (((size_t)(n)) << 20)
+#define GB(n) (((size_t)(n)) << 30)
+#define TB(n) (((size_t)(n)) << 40)
+
 typedef ptrdiff_t isize;
 
 #define countof(arr) ((isize)(sizeof(arr) / sizeof((arr)[0])))
@@ -111,13 +116,8 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
 #define MAX_ALIGN _Alignof(max_align_t)
 
 #ifndef ARENA_COMMIT_PAGE_COUNT
-#define ARENA_COMMIT_PAGE_COUNT 1
+#define ARENA_COMMIT_PAGE_COUNT 16
 #endif
-
-#define KB(n) (((size_t)(n)) << 10)
-#define MB(n) (((size_t)(n)) << 20)
-#define GB(n) (((size_t)(n)) << 30)
-#define TB(n) (((size_t)(n)) << 40)
 
 /** Usage:
 
@@ -125,11 +125,11 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
 
 #ifdef OOM_COMMIT
   void *mem = mmap(0, ARENA_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  Arena arena[] = { arena_init(mem, 0) };
 #else
   autofree void *mem = malloc(ARENA_SIZE);
-#endif
-
   Arena arena[] = { arena_init(mem, ARENA_SIZE) };
+#endif
 
   if (ArenaOOM(arena)) {
     abort();
@@ -221,11 +221,11 @@ static void autofree_impl(void *p) {
 ARENA_INLINE Arena arena_init(byte *mem, isize size) {
   Arena a = {0};
 #ifdef OOM_COMMIT
-  size = sysconf(_SC_PAGESIZE) * ARENA_COMMIT_PAGE_COUNT;
-  mprotect(mem, size, PROT_READ | PROT_WRITE);
-  a.commit_size = size;
+  if (size == 0) {
+    a.commit_size = size = sysconf(_SC_PAGESIZE) * ARENA_COMMIT_PAGE_COUNT;
+    Assert(!mprotect(mem, size, PROT_READ | PROT_WRITE));
+  }
 #endif
-  Assert(size > 0 && "arena size must be positive; or use -DOOM_COMMIT for commit-on-demand");
   a.init = a.beg = mem;
   a.end = mem ? mem + size : 0;
   return a;
@@ -244,13 +244,16 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
   isize pad = -(uintptr_t)current & (align - 1);
   while (ARENA_UNLIKELY(count >= (avail - pad) / size)) {
 #ifdef OOM_COMMIT
-    if (mprotect(arena->end, arena->commit_size, PROT_READ | PROT_WRITE) == -1) {
-      perror("arena_alloc mprotect");
-      goto handle_oom;
+    // arena->commit_size == 0 if arena was malloced
+    if (arena->commit_size) {
+      if (mprotect(arena->end, arena->commit_size, PROT_READ | PROT_WRITE) == -1) {
+        perror("arena_alloc mprotect");
+        goto handle_oom;
+      }
+      arena->end += arena->commit_size;
+      avail = arena->end - current;
+      continue;
     }
-    arena->end += arena->commit_size;
-    avail = arena->end - current;
-    continue;
 #endif
     goto handle_oom;
   }

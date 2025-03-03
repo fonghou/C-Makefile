@@ -31,11 +31,11 @@ CFLAGS   += -MMD -MP -fPIC $(WARN)
 LDFLAGS  += $(LIB)
 
 .PHONY: debug release
-debug: CFLAGS += $(SANZ) -O0 -g3 -DLOGGING -DOOM_TRAP
+debug: CFLAGS += $(SANZ) -O0 -g3 -DLOGGING -DOOM_TRAP -DOOM_COMMIT
 debug: LDFLAGS += $(SANZ)
 debug: $(BIN_TARGET) $(LIB_TARGET)
 
-release: CFLAGS  += -O3 -g -DNDEBUG
+release: CFLAGS  += -O2 -g -DNDEBUG -DOOM_COMMIT
 release: LDFLAGS +=
 release: $(BIN_TARGET)
 
