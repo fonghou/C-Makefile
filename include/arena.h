@@ -64,7 +64,7 @@
 #endif
 
 #ifndef NDEBUG
-#define ASSERT_LOG(c) fprintf(stderr, "Assertion failed: %s at %s %s:%d\n", #c, __func__, __FILE__, __LINE__)
+#define ASSERT_LOG(c) fprintf(stderr, "Assertion failed: " c " at %s %s:%d\n", __func__, __FILE__, __LINE__)
 #else
 #define ASSERT_LOG(c) (void)0
 #endif
@@ -113,19 +113,12 @@ typedef struct {
 static const ArenaFlag NO_INIT = {_NO_INIT};
 static const ArenaFlag OOM_NULL = {_OOM_NULL};
 
-#define MAX_ALIGN _Alignof(max_align_t)
-
-#ifndef ARENA_COMMIT_PAGE_COUNT
-#define ARENA_COMMIT_PAGE_COUNT 16
-#endif
-
 /** Usage:
 
 #define ARENA_SIZE MB(128)
 
 #ifdef OOM_COMMIT
-  void *mem = mmap(0, ARENA_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  Arena arena[] = { arena_init(mem, 0) };
+  Arena arena[] = { arena_init(0, 0) };
 #else
   autofree void *mem = malloc(ARENA_SIZE);
   Arena arena[] = { arena_init(mem, ARENA_SIZE) };
@@ -218,11 +211,25 @@ static void autofree_impl(void *p) {
 #define ARENA_INLINE static inline
 #endif
 
+#ifndef ARENA_COMMIT_PAGE_COUNT
+#define ARENA_COMMIT_PAGE_COUNT 16
+#endif
+
+#define ARENA_RESERVE_PAGE_COUNT (1000000 * ARENA_COMMIT_PAGE_COUNT)
+
 ARENA_INLINE Arena arena_init(byte *mem, isize size) {
   Arena a = {0};
 #ifdef OOM_COMMIT
   if (size == 0) {
-    a.commit_size = size = sysconf(_SC_PAGESIZE) * ARENA_COMMIT_PAGE_COUNT;
+    isize page_size = sysconf(_SC_PAGESIZE);
+    a.commit_size = size = page_size * ARENA_COMMIT_PAGE_COUNT;
+    if (mem == NULL) {
+      mem = mmap(0, page_size * ARENA_RESERVE_PAGE_COUNT, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+      if (mem == MAP_FAILED) {
+        perror("arena_init mmap");
+        Assert(!"arena_init mmap");
+      }
+    }
     Assert(!mprotect(mem, size, PROT_READ | PROT_WRITE));
   }
 #endif
@@ -289,7 +296,7 @@ ARENA_INLINE void slice_grow(void *slice, isize size, isize align, Arena *arena)
   } slicemeta;
   memcpy(&slicemeta, slice, sizeof(slicemeta));
 
-  const int grow = MAX_ALIGN;
+  const int grow = 16;
 
   if (slicemeta.cap == 0) {
     // handle slice initialized on stack
@@ -332,7 +339,7 @@ static inline void vt_arena_free(void *ptr, size_t size, arena **ctx) {
 */
 
 ARENA_INLINE void *arena_malloc(size_t size, Arena *arena) {
-  return arena_alloc(arena, size, MAX_ALIGN, 1, NO_INIT);
+  return arena_alloc(arena, size, _Alignof(max_align_t), 1, NO_INIT);
 }
 
 ARENA_INLINE void arena_free(void *ptr, size_t size, Arena *arena) {
