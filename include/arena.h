@@ -77,6 +77,9 @@
     }                           \
   } while (0)
 
+#define Min(a, b) ((a) < (b) ? (a) : (b))
+#define Max(a, b) ((a) > (b) ? (a) : (b))
+
 #define KB(n) (((size_t)(n)) << 10)
 #define MB(n) (((size_t)(n)) << 20)
 #define GB(n) (((size_t)(n)) << 30)
@@ -170,7 +173,7 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
   ({                                                                             \
     Assert(start >= 0 && "slice start must be non-negative");                    \
     Assert(length >= 0 && "slice length must be non-negative");                  \
-    Assert((start) + (length) <= slice.len && "Invalid slice range");            \
+    Assert(slice.len >= (start) + (length) && "Invalid slice range");            \
     __typeof__(slice) s_ = slice;                                                \
     s_.cap = s_.len = length;                                                    \
     if (s_.len == 0) {                                                           \
@@ -299,19 +302,16 @@ ARENA_INLINE void slice_grow(void *slice, isize size, isize align, Arena *arena)
   const int grow = 16;
 
   if (slicemeta.cap == 0) {
-    // handle slice initialized on stack
     slicemeta.cap = slicemeta.len + grow;
     void *ptr = arena_alloc(arena, size, align, slicemeta.cap, NO_INIT);
-    // copy from stack or no-op if slicemeta.len == 0
-    slicemeta.data = memcpy(ptr, slicemeta.data, size * slicemeta.len);
+    slicemeta.data = memmove(ptr, slicemeta.data, size * slicemeta.len);
   } else if (ARENA_LIKELY((uintptr_t)slicemeta.data == (uintptr_t)arena->beg - size * slicemeta.cap)) {
     // grow slice inplace
     slicemeta.cap += grow;
     arena_alloc(arena, size, 1, grow, NO_INIT);
   } else {
-    slicemeta.cap += slicemeta.cap / 2;  // grow by 1.5
+    slicemeta.cap += Max(slicemeta.cap / 2, grow);
     void *ptr = arena_alloc(arena, size, align, slicemeta.cap, NO_INIT);
-    // move slice from possible overlapping arena
     slicemeta.data = memmove(ptr, slicemeta.data, size * slicemeta.len);
   }
 
@@ -366,7 +366,7 @@ typedef struct astr {
 ARENA_INLINE astr astrclone(Arena *arena, astr s) {
   astr s2 = s;
   // Early return if string is empty or already at arena boundary
-  if (!s.len || s.data + s.len == (char *)arena->beg)
+  if (s.len == 0 || s.data + s.len == (char *)arena->beg)
     return s2;
 
   s2.data = New(arena, char, s.len, NO_INIT);
@@ -375,7 +375,7 @@ ARENA_INLINE astr astrclone(Arena *arena, astr s) {
 }
 
 ARENA_INLINE astr astrconcat(Arena *arena, astr head, astr tail) {
-  astr ret = head;
+  astr result = head;
   // Ignore empty head
   if (head.len == 0) {
     // If tail is at arena tip, return it directly; otherwise clone
@@ -383,11 +383,11 @@ ARENA_INLINE astr astrconcat(Arena *arena, astr head, astr tail) {
   }
   // If head isn't at arena tip, clone it
   if (head.data + head.len != (char *)arena->beg) {
-    ret = astrclone(arena, head);
+    result = astrclone(arena, head);
   }
   // Now head is guaranteed to be at arena tip, clone tail and append it
-  ret.len += astrclone(arena, tail).len;
-  return ret;
+  result.len += astrclone(arena, tail).len;
+  return result;
 }
 
 ARENA_INLINE astr astrbytes(Arena *arena, const void *bytes, size_t nbytes) {
@@ -452,7 +452,7 @@ ARENA_INLINE uint64_t astrhash(astr key) {
 
 #if __has_include("cc.h")
 #include "cc.h"
-#define CC_CMPR astr, return strncmp(val_1.data, val_2.data, val_1.len < val_2.len ? val_1.len : val_2.len);
+#define CC_CMPR astr, return strncmp(val_1.data, val_2.data, Min(val_1.len, val_2.len));
 #define CC_HASH astr, return astrhash(val);
 #endif
 
