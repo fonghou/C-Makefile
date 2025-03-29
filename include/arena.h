@@ -20,6 +20,7 @@
 #define ARENA_H_
 
 #include <memory.h>
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -32,15 +33,6 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <unistd.h>
-#endif
-
-#if defined(__GNUC__) && !defined(__APPLE__)
-#undef setjmp
-#define setjmp  __builtin_setjmp
-#define longjmp __builtin_longjmp
-#define _JBLEN  5
-#else
-#include <setjmp.h>
 #endif
 
 // Branch optimization macros.
@@ -98,7 +90,7 @@ struct Arena {
   byte *init;
   byte *beg;
   byte *end;
-  void **jmpbuf;
+  jmp_buf *jmpbuf;
 #ifdef OOM_COMMIT
   isize commit_size;
 #endif
@@ -150,11 +142,11 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
   (t *)_Generic((z), t *: arena_alloc_init, ArenaFlag: arena_alloc)(a, sizeof(t), _Alignof(t), n, \
                                                                     _Generic((z), t *: z, ArenaFlag: z))
 
-#define ArenaOOM(A)                                 \
-  ({                                                \
-    Arena *a_ = (A);                                \
-    a_->jmpbuf = New(a_, void *, _JBLEN, OOM_NULL); \
-    !a_->jmpbuf || setjmp((void *)a_->jmpbuf);      \
+#define ArenaOOM(arena)      \
+  ({                         \
+    jmp_buf jmpbuf;          \
+    arena->jmpbuf = &jmpbuf; \
+    setjmp(jmpbuf);          \
   })
 
 #define CONCAT_(a, b) a##b
@@ -280,7 +272,7 @@ handle_oom:
   Assert(!OOM_TRAP);
 #endif
   Assert(arena->jmpbuf && "not set by ArenaOOM");
-  longjmp((void *)arena->jmpbuf, 1);
+  longjmp(*arena->jmpbuf, 1);
 }
 
 ARENA_INLINE void *arena_alloc_init(Arena *arena, isize size, isize align, isize count,
