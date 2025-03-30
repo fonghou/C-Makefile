@@ -355,7 +355,7 @@ typedef struct astr {
 // printf("%.*s", S(s))
 #define S(s) (int)(s).len, (s).data
 
-ARENA_INLINE astr astrclone(Arena *arena, astr s) {
+ARENA_INLINE astr astr_clone(Arena *arena, astr s) {
   astr s2 = s;
   // Early return if string is empty or already at arena boundary
   if (s.len == 0 || s.data + s.len == (char *)arena->beg)
@@ -366,39 +366,39 @@ ARENA_INLINE astr astrclone(Arena *arena, astr s) {
   return s2;
 }
 
-ARENA_INLINE astr astrconcat(Arena *arena, astr head, astr tail) {
+ARENA_INLINE astr astr_concat(Arena *arena, astr head, astr tail) {
   astr result = head;
   // Ignore empty head
   if (head.len == 0) {
     // If tail is at arena tip, return it directly; otherwise clone
-    return tail.len && tail.data + tail.len == (char *)arena->beg ? tail : astrclone(arena, tail);
+    return tail.len && tail.data + tail.len == (char *)arena->beg ? tail : astr_clone(arena, tail);
   }
   // If head isn't at arena tip, clone it
   if (head.data + head.len != (char *)arena->beg) {
-    result = astrclone(arena, head);
+    result = astr_clone(arena, head);
   }
   // Now head is guaranteed to be at arena tip, clone tail and append it
-  result.len += astrclone(arena, tail).len;
+  result.len += astr_clone(arena, tail).len;
   return result;
 }
 
-ARENA_INLINE astr astrbytes(Arena *arena, const void *bytes, size_t nbytes) {
-  return astrclone(arena, (astr){(char *)bytes, nbytes});
+ARENA_INLINE astr astr_from_bytes(Arena *arena, const void *bytes, size_t nbytes) {
+  return astr_clone(arena, (astr){(char *)bytes, nbytes});
 }
 
-ARENA_INLINE astr astrstr(Arena *arena, const char *str) {
-  return astrbytes(arena, str, strlen(str));
+ARENA_INLINE astr astr_from_cstr(Arena *arena, const char *str) {
+  return astr_from_bytes(arena, str, strlen(str));
 }
 
-ARENA_INLINE astr astrcatbytes(Arena *arena, astr head, const void *bytes, size_t nbytes) {
-  return astrconcat(arena, head, (astr){(char *)bytes, nbytes});
+ARENA_INLINE astr astr_cat_bytes(Arena *arena, astr head, const void *bytes, size_t nbytes) {
+  return astr_concat(arena, head, (astr){(char *)bytes, nbytes});
 }
 
-ARENA_INLINE astr astrcatstr(Arena *arena, astr head, const char *str) {
-  return astrcatbytes(arena, head, str, strlen(str));
+ARENA_INLINE astr astr_cat_cstr(Arena *arena, astr head, const char *str) {
+  return astr_cat_bytes(arena, head, str, strlen(str));
 }
 
-static astr astrfmt(Arena *arena, const char *format, ...) {
+static astr astr_format(Arena *arena, const char *format, ...) {
   va_list args;
   va_start(args, format);
   int nbytes = vsnprintf(NULL, 0, format, args);
@@ -409,7 +409,7 @@ static astr astrfmt(Arena *arena, const char *format, ...) {
   int nbytes2 = vsnprintf(data, nbytes + 1, format, args);
   va_end(args);
   Assert(nbytes2 == nbytes);
-  // drop \0 so that astrconcat still works
+  // drop \0 so that astr_concat still works
   arena->beg--;
   return (astr){.data = data, .len = nbytes};
 }
@@ -417,24 +417,87 @@ static astr astrfmt(Arena *arena, const char *format, ...) {
 // return a temporary c string to be passed immediately
 // into tranditional null-terminated string api call.
 // its lifetime last until next arena allocation
-ARENA_INLINE const char *tostr(Arena arena, astr s) {
-  return astrconcat(&arena, s, astr("\0")).data;
+ARENA_INLINE const char *astr_to_cstr(Arena arena, astr s) {
+  return astr_concat(&arena, s, astr("\0")).data;
 }
 
 // heap copy a null-termniated string.
 // must free() by caller
-ARENA_INLINE char *tostrdup(astr s) {
+ARENA_INLINE char *astr_to_cstrdup(astr s) {
   return strndup(s.data, s.len);
 }
 
-ARENA_INLINE bool astrcmp(astr a, astr b) {
+ARENA_INLINE bool astr_equals(astr a, astr b) {
   if (a.len != b.len)
     return false;
 
   return !a.len || !memcmp(a.data, b.data, a.len);
 }
 
-ARENA_INLINE uint64_t astrhash(astr key) {
+ARENA_INLINE bool astr_starts_with(astr s, astr prefix) {
+  isize n = prefix.len;
+  return n <= s.len && !memcmp(s.data, prefix.data, n);
+}
+
+ARENA_INLINE bool astr_ends_with(astr s, astr suffix) {
+  isize n = suffix.len;
+  return n <= s.len && !memcmp(s.data + s.len - n, suffix.data, n);
+}
+
+ARENA_INLINE astr astr_trim_left(astr s) {
+  while (s.len && *s.data <= ' ')
+    ++s.data, --s.len;
+  return s;
+}
+
+ARENA_INLINE astr astr_trim_right(astr s) {
+  while (s.len && s.data[s.len - 1] <= ' ')
+    --s.len;
+  return s;
+}
+
+ARENA_INLINE astr astr_trim(astr sv) {
+  return astr_trim_right(astr_trim_left(sv));
+}
+
+ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
+  astr slice = {s.data + *pos, s.len - *pos};
+  const char *res = memmem(slice.data, slice.len, sep.data, sep.len);
+  astr tok = {slice.data, res ? (res - slice.data) : slice.len};
+  *pos += tok.len + sep.len;
+  return tok;
+}
+
+// for (astr_split(it, ", ", str)) { ... it.token ...}
+// NOTE: it.token may contain null char ie. printf(..., S(astr_trim(it.token)))
+#define astr_split(it, strsep, str)           \
+  struct {                                    \
+    astr input, token, sep;                   \
+    isize pos;                                \
+  } it = {.input = str, .sep = astr(strsep)}; \
+  it.pos <= it.input.len && (it.token = _astr_split(it.input, it.sep, &it.pos)).data;
+
+ARENA_INLINE astr _astr_split_by_char(astr s, const char *breakset, isize *pos, Arena *a) {
+  astr slice = {s.data + *pos, s.len - *pos};
+  const char *p1 = astr_to_cstr(*a, slice);
+  const char *p2 = strpbrk(p1, breakset);
+  astr tok = {slice.data, p2 ? (p2 - p1) : slice.len};
+  isize sep_len = p2 ? strspn(p2, breakset) : 1;  // skip contiguous breakset
+  *pos += tok.len + sep_len;
+  return tok;
+}
+
+// for (astr_split_by_char(it, ",| ", str, arena)) { ... it.token ...}
+// NOTE: loop stops at the first null char in str.data
+#define astr_split_by_char(it, charsep, str, arena) \
+  struct {                                          \
+    astr input, token;                              \
+    const char *sep;                                \
+    isize pos;                                      \
+  } it = {.input = str, .sep = charsep};            \
+  it.pos <= it.input.len && (it.token = _astr_split_by_char(it.input, it.sep, &it.pos, arena)).data[0];
+
+ARENA_INLINE uint64_t astr_hash(astr key) {
   uint64_t hash = 0xcbf29ce484222325ull;
   for (isize i = 0; i < key.len; i++)
     hash = ((unsigned char)key.data[i] ^ hash) * 0x100000001b3ull;
@@ -445,7 +508,7 @@ ARENA_INLINE uint64_t astrhash(astr key) {
 #if __has_include("cc.h")
 #include "cc.h"
 #define CC_CMPR astr, return strncmp(val_1.data, val_2.data, Min(val_1.len, val_2.len));
-#define CC_HASH astr, return astrhash(val);
+#define CC_HASH astr, return astr_hash(val);
 #endif
 
 #endif  // ARENA_H_
