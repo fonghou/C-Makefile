@@ -414,18 +414,52 @@ static astr astr_format(Arena *arena, const char *format, ...) {
   return (astr){.data = data, .len = nbytes};
 }
 
-// return a temporary c string to be passed immediately
-// into tranditional null-terminated string api call.
-// its lifetime last until next arena allocation
+// just like strndup
+ARENA_INLINE char *astr_cstrdup(astr s) {
+  return strndup(s.data, s.len);
+}
+
+// return a null-terminated byte string with a temporary lifetime.
 ARENA_INLINE const char *astr_to_cstr(Arena arena, astr s) {
   return astr_concat(&arena, s, astr("\0")).data;
 }
 
-// heap copy a null-termniated string.
-// must free() by caller
-ARENA_INLINE char *astr_cstrdup(astr s) {
-  return strndup(s.data, s.len);
+ARENA_INLINE astr _astr_split_by_char(astr s, const char *breakset, isize *pos, Arena *a) {
+  astr slice = {s.data + *pos, s.len - *pos};
+  const char *p1 = astr_to_cstr(*a, slice);
+  const char *p2 = strpbrk(p1, breakset);
+  astr tok = {slice.data, p2 ? (p2 - p1) : slice.len};
+  isize sep_len = p2 ? strspn(p2, breakset) : 1;  // skip contiguous breakset
+  *pos += tok.len + sep_len;
+  return tok;
 }
+
+// for (astr_split_by_char(it, ",| ", str, arena)) { ... it.token ...}
+// NOTE: str.data cannot contain internal null character.
+#define astr_split_by_char(it, charsep, str, arena) \
+  struct {                                          \
+    astr input, token;                              \
+    const char *sep;                                \
+    isize pos;                                      \
+  } it = {.input = str, .sep = charsep};            \
+  it.pos <= it.input.len && (it.token = _astr_split_by_char(it.input, it.sep, &it.pos, arena)).data[0];
+
+ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
+  astr slice = {s.data + *pos, s.len - *pos};
+  const char *res = memmem(slice.data, slice.len, sep.data, sep.len);
+  astr tok = {slice.data, res ? (res - slice.data) : slice.len};
+  *pos += tok.len + sep.len;
+  return tok;
+}
+
+// for (astr_split(it, ", ", str)) { ... it.token ...}
+// NOTE: it.token may contain internal null character.
+#define astr_split(it, strsep, str)           \
+  struct {                                    \
+    astr input, token, sep;                   \
+    isize pos;                                \
+  } it = {.input = str, .sep = astr(strsep)}; \
+  it.pos <= it.input.len && (it.token = _astr_split(it.input, it.sep, &it.pos)).data;
 
 ARENA_INLINE bool astr_equals(astr a, astr b) {
   if (a.len != b.len)
@@ -459,43 +493,6 @@ ARENA_INLINE astr astr_trim_right(astr s) {
 ARENA_INLINE astr astr_trim(astr sv) {
   return astr_trim_right(astr_trim_left(sv));
 }
-
-ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
-  astr slice = {s.data + *pos, s.len - *pos};
-  const char *res = memmem(slice.data, slice.len, sep.data, sep.len);
-  astr tok = {slice.data, res ? (res - slice.data) : slice.len};
-  *pos += tok.len + sep.len;
-  return tok;
-}
-
-// for (astr_split(it, ", ", str)) { ... it.token ...}
-// NOTE: it.token may contain null character.
-#define astr_split(it, strsep, str)           \
-  struct {                                    \
-    astr input, token, sep;                   \
-    isize pos;                                \
-  } it = {.input = str, .sep = astr(strsep)}; \
-  it.pos <= it.input.len && (it.token = _astr_split(it.input, it.sep, &it.pos)).data;
-
-ARENA_INLINE astr _astr_split_by_char(astr s, const char *breakset, isize *pos, Arena *a) {
-  astr slice = {s.data + *pos, s.len - *pos};
-  const char *p1 = astr_to_cstr(*a, slice);
-  const char *p2 = strpbrk(p1, breakset);
-  astr tok = {slice.data, p2 ? (p2 - p1) : slice.len};
-  isize sep_len = p2 ? strspn(p2, breakset) : 1;  // skip contiguous breakset
-  *pos += tok.len + sep_len;
-  return tok;
-}
-
-// for (astr_split_by_char(it, ",| ", str, arena)) { ... it.token ...}
-// NOTE: loop stops at the first null character.
-#define astr_split_by_char(it, charsep, str, arena) \
-  struct {                                          \
-    astr input, token;                              \
-    const char *sep;                                \
-    isize pos;                                      \
-  } it = {.input = str, .sep = charsep};            \
-  it.pos <= it.input.len && (it.token = _astr_split_by_char(it.input, it.sep, &it.pos, arena)).data[0];
 
 ARENA_INLINE uint64_t astr_hash(astr key) {
   uint64_t hash = 0xcbf29ce484222325ull;
