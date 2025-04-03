@@ -454,11 +454,11 @@ ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
 
 // for (astr_split(it, ", ", str)) { ... it.token ...}
 // NOTE: it.token may contain internal null character.
-#define astr_split(it, strsep, str)           \
-  struct {                                    \
-    astr input, token, sep;                   \
-    isize pos;                                \
-  } it = {.input = str, .sep = astr(strsep)}; \
+#define astr_split(it, strsep, str)                             \
+  struct {                                                      \
+    astr input, token, sep;                                     \
+    isize pos;                                                  \
+  } it = {.input = str, .sep = (astr){strsep, strlen(strsep)}}; \
   it.pos <= it.input.len && (it.token = _astr_split(it.input, it.sep, &it.pos)).data;
 
 ARENA_INLINE bool astr_equals(astr a, astr b) {
