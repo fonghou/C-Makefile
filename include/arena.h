@@ -424,24 +424,24 @@ ARENA_INLINE const char *astr_to_cstr(Arena arena, astr s) {
   return astr_concat(&arena, s, astr("\0")).data;
 }
 
-ARENA_INLINE astr _astr_split_by_char(astr s, const char *breakset, isize *pos, Arena *a) {
+ARENA_INLINE astr _astr_split_by_char(astr s, const char *charset, isize *pos, Arena *a) {
   astr slice = {s.data + *pos, s.len - *pos};
   const char *p1 = astr_to_cstr(*a, slice);
-  const char *p2 = strpbrk(p1, breakset);
+  const char *p2 = strpbrk(p1, charset);
   astr tok = {slice.data, p2 ? (p2 - p1) : slice.len};
-  isize sep_len = p2 ? strspn(p2, breakset) : 1;  // skip contiguous breakset
+  isize sep_len = p2 ? strspn(p2, charset) : 0;  // skip contiguous breakset
   *pos += tok.len + sep_len;
   return tok;
 }
 
 // for (astr_split_by_char(it, ",| ", str, arena)) { ... it.token ...}
 // NOTE: str.data cannot contain internal null character.
-#define astr_split_by_char(it, charsep, str, arena) \
+#define astr_split_by_char(it, charset, str, arena) \
   struct {                                          \
     astr input, token;                              \
     const char *sep;                                \
     isize pos;                                      \
-  } it = {.input = str, .sep = charsep};            \
+  } it = {.input = str, .sep = charset};            \
   it.pos <= it.input.len && (it.token = _astr_split_by_char(it.input, it.sep, &it.pos, arena)).data[0];
 
 ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
