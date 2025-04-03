@@ -428,10 +428,10 @@ ARENA_INLINE astr _astr_split_by_char(astr s, const char *charset, isize *pos, A
   astr slice = {s.data + *pos, s.len - *pos};
   const char *p1 = astr_to_cstr(*a, slice);
   const char *p2 = strpbrk(p1, charset);
-  astr tok = {slice.data, p2 ? (p2 - p1) : slice.len};
-  isize sep_len = p2 ? strspn(p2, charset) : 0;  // skip contiguous breakset
-  *pos += tok.len + sep_len;
-  return tok;
+  astr token = {slice.data, p2 ? (p2 - p1) : slice.len};
+  isize sep_len = p2 ? strspn(p2, charset) : 1;  // skip contiguous breakset
+  *pos += token.len + sep_len;
+  return token;
 }
 
 // for (astr_split_by_char(it, ",| ", str, arena)) { ... it.token ...}
@@ -447,9 +447,9 @@ ARENA_INLINE astr _astr_split_by_char(astr s, const char *charset, isize *pos, A
 ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
   astr slice = {s.data + *pos, s.len - *pos};
   const char *res = memmem(slice.data, slice.len, sep.data, sep.len);
-  astr tok = {slice.data, res ? (res - slice.data) : slice.len};
-  *pos += tok.len + sep.len;
-  return tok;
+  astr token = {slice.data, res ? (res - slice.data) : slice.len};
+  *pos += token.len + sep.len;
+  return token;
 }
 
 // for (astr_split(it, ", ", str)) { ... it.token ...}
