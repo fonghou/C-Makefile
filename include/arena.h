@@ -429,7 +429,7 @@ ARENA_INLINE astr _astr_split_by_char(astr s, const char *charset, isize *pos, A
   const char *p1 = astr_to_cstr(*a, slice);
   const char *p2 = strpbrk(p1, charset);
   astr token = {slice.data, p2 ? (p2 - p1) : slice.len};
-  isize sep_len = p2 ? strspn(p2, charset) : 1;  // skip contiguous breakset
+  isize sep_len = p2 ? strspn(p2, charset) : 0;  // skip seperator found in charset
   *pos += token.len + sep_len;
   return token;
 }
@@ -442,12 +442,12 @@ ARENA_INLINE astr _astr_split_by_char(astr s, const char *charset, isize *pos, A
     const char *sep;                                \
     isize pos;                                      \
   } it = {.input = str, .sep = charset};            \
-  it.pos <= it.input.len && (it.token = _astr_split_by_char(it.input, it.sep, &it.pos, arena)).data[0];
+  it.pos < it.input.len && (it.token = _astr_split_by_char(it.input, it.sep, &it.pos, arena)).data[0];
 
 ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
   astr slice = {s.data + *pos, s.len - *pos};
   const char *res = memmem(slice.data, slice.len, sep.data, sep.len);
-  astr token = {slice.data, res ? (res - slice.data) : slice.len};
+  astr token = {slice.data, res && res != slice.data ? (res - slice.data) : slice.len};
   *pos += token.len + sep.len;
   return token;
 }
@@ -459,7 +459,7 @@ ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
     astr input, token, sep;                                     \
     isize pos;                                                  \
   } it = {.input = str, .sep = (astr){strsep, strlen(strsep)}}; \
-  it.pos <= it.input.len && (it.token = _astr_split(it.input, it.sep, &it.pos)).data;
+  it.pos < it.input.len && (it.token = _astr_split(it.input, it.sep, &it.pos)).data;
 
 ARENA_INLINE bool astr_equals(astr a, astr b) {
   if (a.len != b.len)
