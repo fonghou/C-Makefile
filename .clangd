@@ -1,5 +1,5 @@
 CompileFlags:
-  Add: [-D_COSMO_SOURCE, -include/opt/cosmocc/include/libc/normalize.inc, -fmacro-backtrace-limit=1]
+  Add: [-D_CLANGD, -fsyntax-only, -fmacro-backtrace-limit=1]
 
 Diagnostics:
   Suppress: []

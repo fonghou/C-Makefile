@@ -19,6 +19,7 @@
 #ifndef ARENA_H_
 #define ARENA_H_
 
+#define _GNU_SOURCE
 #include <memory.h>
 #include <setjmp.h>
 #include <stdarg.h>

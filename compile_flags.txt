@@ -1,2 +1,8 @@
 -I
+/opt/cosmocc/include
+-include
+/opt/cosmocc/include/libc/normalize.inc
+-I
+../../github/datatype99/build/_deps/metalang99-src/include/
+-I
 ./include
