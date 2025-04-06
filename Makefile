@@ -26,15 +26,12 @@ LIB :=$(addprefix -l,m)
 WARN = -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function
 SANZ += -fno-omit-frame-pointer -fsanitize-trap=unreachable -fsanitize=undefined#,address
 
-ifeq ($(CC),clang)
-	CPPFLAGS += -Og -I./include -include-pch ./include/datatype99.h.pch
-endif
-CPPFLAGS += -I./include -I../../github/datatype99/build/_deps/metalang99-src/include/
+CPPFLAGS = -I./include -I../../github/datatype99/build/_deps/metalang99-src/include/
 CFLAGS   += -MMD -MP $(WARN)
 LDFLAGS  += $(LIB)
 
 .PHONY: debug release
-debug: CFLAGS += $(SANZ) -Og -g3 -DLOGGING -DOOM_TRAP -DOOM_COMMIT
+debug: CFLAGS += $(SANZ) -O0 -g3 -DLOGGING -DOOM_TRAP -DOOM_COMMIT
 debug: LDFLAGS += $(SANZ)
 debug: $(BIN_TARGET)
 
