@@ -23,7 +23,7 @@ LIB_OBJ :=$(LIB_SRC:%.c=$(BUILD_DIR)/%.o)
 DEP :=$(OBJ:.o=.d)
 LIB :=$(addprefix -l,m)
 
-WARN = -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function
+WARN = -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function -Wno-format-security
 SANZ += -fno-omit-frame-pointer -fsanitize-trap=unreachable -fsanitize=undefined#,address
 
 CPPFLAGS = -I./include -I../../github/datatype99/build/_deps/metalang99-src/include/
@@ -61,6 +61,7 @@ deps:
 	curl -s --output-dir include -O https://raw.githubusercontent.com/JacksonAllan/CC/refs/heads/main/cc.h
 	curl -s --output-dir include -O https://raw.githubusercontent.com/JacksonAllan/Verstable/refs/heads/main/verstable.h
 	curl -s --output-dir include -O https://raw.githubusercontent.com/hirrolot/datatype99/refs/heads/master/datatype99.h
+	curl -s --output-dir include -O https://raw.githubusercontent.com/sheredom/utf8.h/refs/heads/master/utf8.h
 	curl -s --output-dir include -O https://raw.githubusercontent.com/spevnev/uprintf/main/uprintf.h
 
 .PHONY: watch

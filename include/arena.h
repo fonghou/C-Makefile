@@ -251,14 +251,14 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
     if (arena->commit_size) {
       if (mprotect(arena->end, arena->commit_size, PROT_READ | PROT_WRITE) == -1) {
         perror("arena_alloc mprotect");
-        goto handle_oom;
+        goto HANDLE_OOM;
       }
       arena->end += arena->commit_size;
       avail = arena->end - current;
       continue;
     }
 #endif
-    goto handle_oom;
+    goto HANDLE_OOM;
   }
 
   isize total_size = size * count;
@@ -266,7 +266,7 @@ static void *arena_alloc(Arena *arena, isize size, isize align, isize count, Are
   current += pad;
   return flags.mask & _NO_INIT ? current : memset(current, 0, total_size);
 
-handle_oom:
+HANDLE_OOM:
   if (flags.mask & _OOM_NULL)
     return NULL;
 #ifdef OOM_TRAP
@@ -311,26 +311,6 @@ ARENA_INLINE void slice_grow(void *slice, isize size, isize align, Arena *arena)
   memcpy(slice, &slicemeta, sizeof(slicemeta));
 }
 
-/** Usage:
-
-static inline void *vt_arena_malloc(size_t size, arena **ctx) {
-  return arena_malloc(size, *ctx);
-}
-
-static inline void vt_arena_free(void *ptr, size_t size, arena **ctx) {
-  arena_free(ptr, size, *ctx);
-}
-
-#define NAME      Map_int_astr
-#define KEY_TY    int
-#define VAL_TY    astr
-#define CTX_TY    Arena *
-#define MALLOC_FN vt_arena_malloc
-#define FREE_FN   vt_arena_free
-#include "verstable.h"
-
-*/
-
 ARENA_INLINE void *arena_malloc(size_t size, Arena *arena) {
   return arena_alloc(arena, size, _Alignof(max_align_t), 1, NO_INIT);
 }
@@ -351,7 +331,7 @@ typedef struct astr {
 } astr;
 
 // string literal only!
-#define astr(s) ((astr){s, sizeof(s) - 1})
+#define astr(s) ((astr){(s), sizeof(s) - 1})
 
 // printf("%.*s", S(s))
 #define S(s) (int)(s).len, (s).data
@@ -503,10 +483,32 @@ ARENA_INLINE uint64_t astr_hash(astr key) {
   return hash;
 }
 
-#if __has_include("cc.h")
+/** Usage:
+
 #include "cc.h"
-#define CC_CMPR astr, return strncmp(val_1.data, val_2.data, Min(val_1.len, val_2.len));
-#define CC_HASH astr, return astr_hash(val);
-#endif
+
+static inline uint64_t astr_wyhash(astr key) {
+  return cc_wyhash(key.data, key.len);
+}
+
+static inline void *vt_arena_malloc(size_t size, Arena **ctx) {
+  return arena_malloc(size, *ctx);
+}
+
+static inline void vt_arena_free(void *ptr, size_t size, Arena **ctx) {
+  arena_free(ptr, size, *ctx);
+}
+
+#define NAME      Map_astr_astr
+#define KEY_TY    astr
+#define VAL_TY    astr
+#define CTX_TY    Arena *
+#define CMPR_FN   astr_equals
+#define HASH_FN   astr_wyhash
+#define MALLOC_FN vt_arena_malloc
+#define FREE_FN   vt_arena_free
+#include "verstable.h"
+
+*/
 
 #endif  // ARENA_H_
