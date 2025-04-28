@@ -240,7 +240,8 @@ ARENA_INLINE void arena_reset(Arena *arena) {
 
 static void *arena_alloc(Arena *arena, isize size, isize align, isize count, ArenaFlag flags) {
   Assert(arena != NULL && "arena cannot be NULL");
-  Assert(count >= 0 && "count must be positive");
+  Assert(size > 0 && "size must be positive");
+  Assert(count > 0 && "count must be positive");
 
   byte *current = arena->beg;
   isize avail = arena->end - current;
@@ -416,7 +417,6 @@ ARENA_INLINE astr _astr_split_by_char(astr s, const char *charset, isize *pos, A
 }
 
 // for (astr_split_by_char(it, ",| ", str, arena)) { ... it.token ...}
-// NOTE: str.data cannot contain internal null character.
 #define astr_split_by_char(it, charset, str, arena) \
   struct {                                          \
     astr input, token;                              \
@@ -434,7 +434,6 @@ ARENA_INLINE astr _astr_split(astr s, astr sep, isize *pos) {
 }
 
 // for (astr_split(it, ", ", str)) { ... it.token ...}
-// NOTE: it.token may contain internal null character.
 #define astr_split(it, strsep, str)                             \
   struct {                                                      \
     astr input, token, sep;                                     \
