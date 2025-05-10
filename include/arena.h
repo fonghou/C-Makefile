@@ -46,14 +46,14 @@
 #endif
 
 #ifdef __clang__
-#define TRAP(c) __builtin_debugtrap();
+#define TRAP() __builtin_debugtrap();
 #elif defined(__x86_64__)
-#define TRAP(c) __asm__("int3; nop");
+#define TRAP() __asm__("int3; nop");
 #elif defined(__GNUC__)
-#define TRAP(c) __builtin_trap();
+#define TRAP() __builtin_trap();
 #else
 #include <signal.h>
-#define TRAP(c) raise(SIGTRAP);
+#define TRAP() raise(SIGTRAP);
 #endif
 
 #ifndef NDEBUG
