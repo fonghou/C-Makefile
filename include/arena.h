@@ -158,6 +158,13 @@ static const ArenaFlag OOM_NULL = {_OOM_NULL};
   Arena *ARENA_TMP = arena; \
   Arena arena[] = {*ARENA_TMP}
 
+#define Vec(T)     \
+  struct Vec_##T { \
+    T *data;       \
+    isize len;     \
+    isize cap;     \
+  }
+
 #define Slice(...)                   _SliceX(__VA_ARGS__, _Slice4, _Slice3, _Slice2)(__VA_ARGS__)
 #define _SliceX(a, b, c, d, e, ...)  e
 #define _Slice2(arena, slice)        _Slice3(arena, slice, 0)

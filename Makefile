@@ -13,22 +13,20 @@ all: debug
 
 NAME = app
 BUILD_DIR := ./build
-BIN_TARGET= $(BUILD_DIR)/$(NAME)
-LIB_TARGET= $(BUILD_DIR)/lib$(NAME).so
+BIN_TARGET = $(BUILD_DIR)/$(NAME)
+LIB_TARGET = $(BUILD_DIR)/lib$(NAME).so
 
-SRC :=$(shell find . -name '*.c')
-LIB_SRC :=$(shell find . -name '*.c' -not -name $(NAME).c)
-OBJ :=$(SRC:%.c=$(BUILD_DIR)/%.o)
-LIB_OBJ :=$(LIB_SRC:%.c=$(BUILD_DIR)/%.o)
-DEP :=$(OBJ:.o=.d)
-LIB :=$(addprefix -l,m)
+SRC := $(shell find . -name '*.c')
+LIB_SRC := $(shell find . -name '*.c' -not -name $(NAME).c)
+OBJ := $(SRC:%.c=$(BUILD_DIR)/%.o)
+LIB_OBJ := $(LIB_SRC:%.c=$(BUILD_DIR)/%.o)
+DEP := $(OBJ:.o=.d)
 
 WARN = -Wall -Wextra -Wvla -Wno-unused-parameter -Wno-unused-function -Wno-format-security
-SANZ += -fno-omit-frame-pointer -fsanitize-trap=unreachable -fsanitize=undefined#,address
+SANZ = -fno-omit-frame-pointer -fsanitize-trap=unreachable -fsanitize=undefined#,address
 
-CPPFLAGS = -I./include -I../../github/datatype99/build/_deps/metalang99-src/include/
+CPPFLAGS += -I./include -I../../github/datatype99/build/_deps/metalang99-src/include/
 CFLAGS   += -MMD -MP $(WARN)
-LDFLAGS  += $(LIB)
 
 .PHONY: debug release
 debug: CFLAGS += $(SANZ) -O0 -g3 -DLOGGING -DOOM_TRAP -DOOM_COMMIT
