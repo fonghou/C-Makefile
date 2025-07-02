@@ -46,14 +46,14 @@
 #endif
 
 #ifdef __clang__
-#define TRAP() __builtin_debugtrap();
+#define DEBUG_TRAP() __builtin_debugtrap();
 #elif defined(__x86_64__)
-#define TRAP() __asm__("int3; nop");
+#define DEBUG_TRAP() __asm__("int3; nop");
 #elif defined(__GNUC__)
-#define TRAP() __builtin_trap();
+#define DEBUG_TRAP() __builtin_trap();
 #else
 #include <signal.h>
-#define TRAP() raise(SIGTRAP);
+#define DEBUG_TRAP() raise(SIGTRAP);
 #endif
 
 #ifndef NDEBUG
@@ -66,7 +66,7 @@
   do {                          \
     if (ARENA_UNLIKELY(!(c))) { \
       ASSERT_LOG(#c);           \
-      TRAP();                   \
+      DEBUG_TRAP();             \
     }                           \
   } while (0)
 
